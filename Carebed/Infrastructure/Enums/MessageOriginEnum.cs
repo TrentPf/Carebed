@@ -10,7 +10,7 @@ namespace Carebed.Infrastructure.Enums
     /// Indicates which module originated the message.
     /// Extend this enum as new modules are added.
     /// </summary>
-    public enum MessageOrigin
+    public enum MessageOriginEnum
     {
         Unknown = 0,
         SensorManager,
