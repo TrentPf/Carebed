@@ -159,7 +159,8 @@ namespace Carebed
             {
                 // create a simple random value for testing
                 var rnd = new Random();
-                double value = Math.Round(rnd.NextDouble() * 100.0, 2);
+                //double value = Math.Round(rnd.NextDouble() * 100.0, 2);
+                double value = 80085.00f;
 
                 // construct the sensor data instance (use whichever constructor/record signature you have)
                 var sensorData = new SensorData(value);
