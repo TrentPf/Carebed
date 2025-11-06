@@ -5,7 +5,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace Carebed.Infrastructure.EventBus
+namespace Carebed.Infrastructure.MessageEnvelope
 {
     /// <summary>
     /// A concrete implementation of IMessageEnvelope that wraps a strongly typed payload.
@@ -38,7 +38,15 @@ namespace Carebed.Infrastructure.EventBus
         /// <summary>
         /// The actual payload of the message.
         /// </summary>
-        public object Payload { get; }
+        public T Payload { get; }
+
+        /// <summary>
+        /// Provides the payload as an object for the IMessageEnvelope interface. With this, 
+        /// the generic payload can be accessed in a non-generic context. That means we 
+        /// can access it like a IMessageEnvelope if we don't know the type T at compile time.<br/>
+        /// <br/>Otherwise one can access the strongly typed Payload property.
+        /// </summary>
+        object IMessageEnvelope.Payload => Payload;
 
         /// <summary>
         /// This constructor initializes a new instance of the MessageEnvelope class.
@@ -72,6 +80,4 @@ namespace Carebed.Infrastructure.EventBus
                    $"(Id={MessageId}, PayloadType={typeof(T).Name})";
         }
     }
-
-
 }

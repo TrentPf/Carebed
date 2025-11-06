@@ -5,7 +5,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace Carebed.Infrastructure.EventBus
+namespace Carebed.Infrastructure.MessageEnvelope
 {
     /// <summary>
     /// Defines the contract for an envelope that wraps event messages.
