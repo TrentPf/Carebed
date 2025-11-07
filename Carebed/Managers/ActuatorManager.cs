@@ -1,4 +1,5 @@
-﻿using Carebed.Managers;
+﻿using Carebed.Infrastructure.EventBus;
+using Carebed.Managers;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -9,6 +10,7 @@ namespace Carebed.Modules
 {
     internal class ActuatorManager : IManager
     {
+
         public void Dispose()
         {
             throw new NotImplementedException();

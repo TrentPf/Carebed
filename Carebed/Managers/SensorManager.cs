@@ -19,6 +19,7 @@ namespace Carebed.Modules
         private readonly System.Timers.Timer _timer;
         private int _isPolling;
 
+
         /// <summary>
         /// Initializes a new instance of the <see cref="SensorManager"/> class, which manages a collection of sensors
         /// and periodically polls their data, publishing the results to an event bus.

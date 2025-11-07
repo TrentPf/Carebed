@@ -5,6 +5,7 @@ using Carebed.Infrastructure.MessageEnvelope;
 using System.Collections.Generic;
 using System.Linq;
 using Carebed.Managers;
+using Carebed.Modules;
 
 namespace Carebed
 {
@@ -36,16 +37,19 @@ namespace Carebed
         private readonly object _historyLock = new();
 
         // simulated sensor manager (publishes random sensor data)
-        private SimulatedSensorManager? _simulatedSensorManager;
+        //private SimulatedSensorManager? _sensorManager;
+        private IManager _sensorManager;
 
         /// <summary>
         /// Constructor for MainDashboard that accepts an IEventBus instance.
         /// </summary>
         /// <param name="eventBus"></param>
         /// <exception cref="ArgumentNullException"></exception>
-        public MainDashboard(IEventBus eventBus)
+        public MainDashboard(IEventBus eventBus, IManager sensorManager)
         {
             _eventBus = eventBus ?? throw new ArgumentNullException(nameof(eventBus));
+            _sensorManager = sensorManager ?? throw new ArgumentNullException(nameof(sensorManager));
+
             InitializeComponent();
         }
 
@@ -58,16 +62,7 @@ namespace Carebed
         {
             base.OnLoad(e);
             _eventBus.Subscribe<SensorData>(HandleSensorData);
-
-            // start simulated sensors
-            try
-            {
-                _simulatedSensorManager = new SimulatedSensorManager(_eventBus, sensorCount: 6, intervalMs: 1000);
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"Failed to start simulated sensors: {ex}");
-            }
+            _sensorManager.Start();
 
             // start timer
             refreshTimer?.Start();
@@ -135,11 +130,10 @@ namespace Carebed
         /// <param name="e"></param>
         protected override void OnFormClosed(FormClosedEventArgs e)
         {
-            // stop simulated sensors
+            // stop sensors
             try
             {
-                _simulatedSensorManager?.Dispose();
-                _simulatedSensorManager = null;
+                _sensorManager.Stop();
             }
             catch { }
 
@@ -285,7 +279,7 @@ namespace Carebed
                 double value = 80085.00f;
 
                 // construct the sensor data instance (use whichever constructor/record signature you have)
-                var sensorData = new SensorData(value);
+                var sensorData = new SensorData(value, "ChestSensor");
 
                 // wrap in an envelope with origin and explicit type
                 var envelope = new MessageEnvelope<SensorData>(sensorData, MessageOriginEnum.DisplayManager, MessageTypeEnum.SensorData);

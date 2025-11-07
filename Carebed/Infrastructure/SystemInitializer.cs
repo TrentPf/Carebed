@@ -1,33 +1,37 @@
 ﻿using Carebed.Infrastructure.EventBus;
+using Carebed.Infrastructure.Sensors;
 using Carebed.Managers;
+//using Carebed.Models.Sensors; // for ISensor and concrete sensors
 using Carebed.Modules;
 
 namespace Carebed.Infrastructure
 {
     internal static class SystemInitializer
     {
-        public static (
-            BasicEventBus eventBus,
-            //placeholders for future managers
-            SensorManager? sensorManager,
-            ActuatorManager? actuatorManager)
-            Initialize()
+        public static (BasicEventBus eventBus, List<IManager> managers) Initialize()
         {
-            // create and intalize eventbus
             var eventBus = new BasicEventBus();
-            eventBus.Initialize();
 
-            // create managers placeholders
+            // Create real sensors
+            //var sensors = new List<ISensor>
+            //{
+            //    new TemperatureSensor(),
+            //    new PressureSensor(),
+            //    // ... add more sensors as needed
+            //};
+
             var sensorManager = new SimulatedSensorManager(eventBus);
-            //var actuatorManager = new ActuatorManager(eventBus);
+            // var actuatorManager = new ActuatorManager(eventBus, actuators);
+            // var displayManager = new DisplayManager(eventBus, displays);
 
-            return (eventBus, sensorManager, null);
+            var managers = new List<IManager>
+            {
+                sensorManager
+                // actuatorManager,
+                // displayManager
+            };
+
+            return (eventBus, managers);
         }
     }
-
-
-
 }
-
-
-

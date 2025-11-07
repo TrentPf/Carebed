@@ -25,6 +25,15 @@ namespace Carebed.Infrastructure.Sensors
 {
     public class SimulatedSensorManager : IManager
     {
+        private enum SimulatedSensorNames{
+            EEGSensor,
+            BloodO2Sensor,
+            TemperatureSensor,
+            HeartRateSensor,
+            BloodPressureSensor,
+            RespirationRateSensor,
+            GlucoseSensor
+        }
         private readonly IEventBus _eventBus;
         private readonly List<SimulatedSensor> _sensors = new();
         private CancellationTokenSource? _cts;
@@ -38,10 +47,14 @@ namespace Carebed.Infrastructure.Sensors
             _intervalMs = Math.Max(100, intervalMs);
 
             var rnd = new Random();
-            for (int i = 1; i <= sensorCount; i++)
+            var sensorNames = Enum.GetValues(typeof(SimulatedSensorNames)).Cast<SimulatedSensorNames>().ToList();
+            for (int i = 0; i < sensorCount; i++)
             {
                 var baseline = 20.0 + rnd.NextDouble() * 80.0; // 20..100
-                _sensors.Add(new SimulatedSensor($"sensor-{i}", baseline));
+                var name = i < sensorNames.Count
+                    ? sensorNames[i].ToString()
+                    : $"sensor-{i + 1}";
+                _sensors.Add(new SimulatedSensor(name, baseline));
             }
         }
 
