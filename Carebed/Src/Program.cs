@@ -1,5 +1,6 @@
 using System;
 using System.Windows.Forms;
+using Carebed.Infrastructure;
 using Carebed.Infrastructure.EventBus;
 
 namespace Carebed.src
@@ -17,8 +18,7 @@ namespace Carebed.src
             ApplicationConfiguration.Initialize();
 
             // Create and initialize shared services
-            var eventBus = new BasicEventBus();
-            eventBus.Initialize();
+            var(eventBus, sensorMangager, actuatorManager) = SystemInitializer.Initialize();
 
             // Optional: global exception hooks for UI/background threads
             Application.ThreadException += (s, e) =>
