@@ -11,12 +11,18 @@ namespace Carebed.Tests.EventBus
         [TestMethod]
         public async Task PublishAsync_InvokesSubscribedHandler_WithEnvelope()
         {
+            // Arrange
+
+            // Create event bus instance
             var bus = new BasicEventBus();
 
-            // TaskCompletionSource to observe asynchronous handler invocation
+            // Create a TaskCompletionSource to observe asynchronous handler invocation
+            // This is used to wait for the handler to be called
             var tcs = new TaskCompletionSource<MessageEnvelope<SensorData>>();
 
-            // Subscribe handler that receives the envelope
+     
+            // Setup (subscribe) the handler via a lambda that sets the TaskCompletionSource result when
+            // a SensorData message is received
             bus.Subscribe<SensorData>(envelope =>
             {
                 tcs.TrySetResult(envelope);
