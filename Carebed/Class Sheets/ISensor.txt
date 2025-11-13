@@ -1,0 +1,58 @@
+# Class Sheet: ISensor
+
+**Namespace:** Carebed.Domain.Sensors
+
+---
+
+## Purpose
+Defines the minimal contract for a sensor in the Carebed system. Implementations provide a snapshot of sensor data and support lifecycle management (start/stop/dispose).
+
+---
+
+## Interface Definition
+```
+internal interface ISensor : IDisposable
+```
+
+---
+
+## Properties
+- `string Source { get; }`
+  - Logical source/id for the sensor (e.g., "Room A").
+
+---
+
+## Methods
+- `SensorData ReadData()`
+  - Reads a single snapshot of sensor data. Called by the SensorManager every poll cycle.
+- `void Start()`
+  - Starts periodic sampling if the sensor implements its own timer (optional).
+- `void Stop()`
+  - Stops periodic sampling (optional).
+- `void Dispose()`
+  - Releases resources used by the sensor.
+
+---
+
+## Usage Example
+```csharp
+public class TemperatureSensor : ISensor
+{
+    public string Source { get; }
+    public SensorData ReadData() { /* ... */ }
+    public void Start() { /* ... */ }
+    public void Stop() { /* ... */ }
+    public void Dispose() { /* ... */ }
+}
+```
+
+---
+
+## Notes
+- Used by SensorManager to poll and manage sensors.
+- Returns strongly-typed `SensorData` objects.
+
+---
+
+**Copilot AI Acknowledgement:**
+Some or all of this documentation was generated or assisted by GitHub Copilot AI. Please review and validate for correctness and completeness.

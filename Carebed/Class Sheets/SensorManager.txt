@@ -1,0 +1,65 @@
+# Class Sheet: SensorManager
+
+**Namespace:** Carebed.Modules
+
+---
+
+## Purpose
+Manages a collection of sensors, periodically polls their data, and publishes the results to the application's event bus. Handles sensor lifecycle and ensures thread-safe polling.
+
+---
+
+## Class Definition
+```
+internal class SensorManager : IManager, IDisposable
+```
+
+---
+
+## Constructors
+- `SensorManager(IEventBus eventBus, IEnumerable<ISensor> sensors, double intervalMilliseconds = 1000, ISynchronizeInvoke? synchronizingObject = null)`
+  - Initializes the manager with an event bus, a collection of sensors, polling interval, and optional synchronization object.
+
+---
+
+## Properties
+_None explicitly defined (uses private fields for dependencies and state)._ 
+
+---
+
+## Methods
+- `void Start()`
+  - Starts the timer and all managed sensors.
+- `void Stop()`
+  - Stops the timer and all managed sensors.
+- `void Dispose()`
+  - Stops operations, disposes the timer, and releases sensor resources.
+
+---
+
+## Private Methods
+- `Task PollOnceAsync()`
+  - Executes a single polling operation, reading data from all sensors and publishing to the event bus. Ensures only one poll runs at a time.
+
+---
+
+## Usage Example
+```csharp
+var manager = new SensorManager(eventBus, sensors);
+manager.Start();
+// ...
+manager.Stop();
+manager.Dispose();
+```
+
+---
+
+## Notes
+- Uses a timer to poll sensors at a configurable interval.
+- Publishes sensor data as `MessageEnvelope<SensorData>` to the event bus.
+- Ensures thread safety for polling operations.
+
+---
+
+**Copilot AI Acknowledgement:**
+Some or all of this documentation was generated or assisted by GitHub Copilot AI. Please review and validate for correctness and completeness.

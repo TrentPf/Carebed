@@ -1,0 +1,63 @@
+# Class Sheet: SensorData
+
+**Namespace:** Carebed.Infrastructure.Message
+
+---
+
+## Purpose
+Represents a strongly-typed, immutable record for sensor data messages in the Carebed system. Used for transporting sensor readings and related metadata.
+
+---
+
+## Record Definition
+```
+public sealed record SensorData(
+    double Value,
+    string? Source = null,
+    bool IsCritical = false,
+    IReadOnlyDictionary<string, string>? Metadata = null
+) : IEventMessage
+```
+
+---
+
+## Properties
+- `double Value`
+  - The sensor reading value.
+- `string? Source`
+  - Optional source identifier for the data (e.g., sensor location).
+- `bool IsCritical`
+  - Indicates if the message is critical.
+- `IReadOnlyDictionary<string, string>? Metadata`
+  - Optional dictionary for additional metadata.
+- `DateTime CreatedAt { get; init; }`
+  - Timestamp when the message was created (UTC).
+- `Guid CorrelationId { get; init; }`
+  - Unique identifier for correlating related operations or requests.
+- `MessageTypeEnum MessageType { get; init; }`
+  - Type of message (default: SensorData).
+
+---
+
+## Explicit Interface Implementations (IEventMessage)
+- `string? Source`
+- `IReadOnlyDictionary<string, string>? Metadata`
+- `bool IsCritical`
+
+---
+
+## Usage Example
+```csharp
+var data = new SensorData(42.0, "Room A", false, null);
+```
+
+---
+
+## Notes
+- Immutable record type for safe message passing.
+- Used as the payload for message envelopes and event bus communication.
+
+---
+
+**Copilot AI Acknowledgement:**
+Some or all of this documentation was generated or assisted by GitHub Copilot AI. Please review and validate for correctness and completeness.

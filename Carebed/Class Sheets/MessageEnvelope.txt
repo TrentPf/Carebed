@@ -1,0 +1,62 @@
+# Class Sheet: MessageEnvelope<T>
+
+**Namespace:** Carebed.Infrastructure.MessageEnvelope
+
+---
+
+## Purpose
+A concrete implementation of `IMessageEnvelope` that wraps a strongly typed payload and provides standardized metadata for messages in the Carebed system.
+
+---
+
+## Class Definition
+```
+public class MessageEnvelope<T> : IMessageEnvelope
+```
+
+---
+
+## Constructors
+- `MessageEnvelope(T payload, MessageOriginEnum origin, MessageTypeEnum type = MessageTypeEnum.Undefined)`
+  - Initializes a new instance with the given payload, origin, and type. Throws `ArgumentNullException` if payload is null.
+
+---
+
+## Properties
+- `Guid MessageId { get; }`
+  - Unique identifier for the message envelope.
+- `DateTime Timestamp { get; }`
+  - Timestamp when the message was created (UTC).
+- `MessageOriginEnum MessageOrigin { get; }`
+  - Origin of the message.
+- `MessageTypeEnum MessageType { get; }`
+  - Type of the message payload.
+- `T Payload { get; }`
+  - The strongly-typed payload of the message.
+- `object IMessageEnvelope.Payload => Payload`
+  - Provides the payload as an object for non-generic access.
+
+---
+
+## Methods
+- `string ToString()`
+  - Returns a string representation of the message envelope, including timestamp, origin, type, and payload type.
+
+---
+
+## Usage Example
+```csharp
+var envelope = new MessageEnvelope<SensorData>(sensorData, MessageOriginEnum.SensorManager, MessageTypeEnum.SensorData);
+```
+
+---
+
+## Notes
+- Used for encapsulating messages with metadata for event bus communication.
+- Ensures payload is never null.
+- Implements `IMessageEnvelope` for interoperability.
+
+---
+
+**Copilot AI Acknowledgement:**
+Some or all of this documentation was generated or assisted by GitHub Copilot AI. Please review and validate for correctness and completeness.

@@ -1,0 +1,46 @@
+# Class Sheet: MessageOriginEnum
+
+**Namespace:** Carebed.Infrastructure.Enums
+
+---
+
+## Purpose
+Enumerates the possible origins of messages in the Carebed system. Used for tracking and routing messages based on their source module.
+
+---
+
+## Enum Definition
+```
+public enum MessageOriginEnum
+```
+
+---
+
+## Values
+- `Unknown = 0`
+- `SensorManager`
+- `ActuatorManager`
+- `LoggingManager`
+- `SystemInitializer`
+- `DisplayManager`
+- `AlertManager`
+- `NetworkManager`
+- `EventBus`
+
+---
+
+## Usage Example
+```csharp
+var origin = MessageOriginEnum.SensorManager;
+```
+
+---
+
+## Notes
+- Extend this enum as new modules are added to the system.
+- Used in message envelopes and event bus logic.
+
+---
+
+**Copilot AI Acknowledgement:**
+Some or all of this documentation was generated or assisted by GitHub Copilot AI. Please review and validate for correctness and completeness.

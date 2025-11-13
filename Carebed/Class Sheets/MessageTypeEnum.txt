@@ -1,0 +1,43 @@
+# Class Sheet: MessageTypeEnum
+
+**Namespace:** Carebed.Infrastructure.Enums
+
+---
+
+## Purpose
+Enumerates the high-level categories or tags for messages in the Carebed system. Useful for routing, prioritization, and UI display.
+
+---
+
+## Enum Definition
+```
+public enum MessageTypeEnum
+```
+
+---
+
+## Values
+- `Undefined = 0`
+- `SensorData`
+- `Alert`
+- `ActuatorCommand`
+- `ActuatorStatus`
+- `System`
+
+---
+
+## Usage Example
+```csharp
+var type = MessageTypeEnum.SensorData;
+```
+
+---
+
+## Notes
+- Extend this enum as new message types are added to the system.
+- Used in message envelopes and event bus logic.
+
+---
+
+**Copilot AI Acknowledgement:**
+Some or all of this documentation was generated or assisted by GitHub Copilot AI. Please review and validate for correctness and completeness.

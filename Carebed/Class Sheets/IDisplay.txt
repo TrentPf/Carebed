@@ -1,0 +1,47 @@
+# Class Sheet: IDisplay
+
+**Namespace:** Carebed.Domain.Display
+
+---
+
+## Purpose
+Defines the contract for display modules in the Carebed system. Intended for future extension to support display-related operations.
+
+---
+
+## Interface Definition
+```
+internal interface IDisplay
+```
+
+---
+
+## Properties
+_None defined._
+
+---
+
+## Methods
+_None defined._
+
+---
+
+## Usage Example
+```csharp
+// Example implementation (to be extended as needed)
+public class RoomDisplay : IDisplay
+{
+    // Implementation details
+}
+```
+
+---
+
+## Notes
+- This interface is currently empty and serves as a marker or placeholder for display-related functionality.
+- Extend this interface as display requirements evolve.
+
+---
+
+**Copilot AI Acknowledgement:**
+Some or all of this documentation was generated or assisted by GitHub Copilot AI. Please review and validate for correctness and completeness.

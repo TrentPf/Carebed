@@ -1,0 +1,56 @@
+# Class Sheet: IMessageEnvelope
+
+**Namespace:** Carebed.Infrastructure.MessageEnvelope
+
+---
+
+## Purpose
+Defines the contract for an envelope that wraps event messages in the Carebed system. Ensures consistency across modules and supports logging, debugging, and extensibility.
+
+---
+
+## Interface Definition
+```
+public interface IMessageEnvelope
+```
+
+---
+
+## Properties
+- `Guid MessageId { get; }`
+  - Unique identifier for the message envelope.
+- `DateTime Timestamp { get; }`
+  - Timestamp when the message was created.
+- `MessageOriginEnum MessageOrigin { get; }`
+  - The origin of the message.
+- `MessageTypeEnum MessageType { get; }`
+  - Type of the message represented by this instance.
+- `object Payload { get; }`
+  - The actual payload of the message (non-generic access).
+
+---
+
+## Methods
+- `string ToString()`
+  - Provides a string representation of the message envelope.
+
+---
+
+## Usage Example
+```csharp
+public class MyEnvelope : IMessageEnvelope
+{
+    // Implement all properties and methods
+}
+```
+
+---
+
+## Notes
+- Used as a base for generic and non-generic message envelopes.
+- Supports extensibility for additional metadata or behaviors.
+
+---
+
+**Copilot AI Acknowledgement:**
+Some or all of this documentation was generated or assisted by GitHub Copilot AI. Please review and validate for correctness and completeness.
