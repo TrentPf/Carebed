@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using Carebed.Infrastructure.Enums;
 
 namespace Carebed.Managers
 {
@@ -21,6 +22,23 @@ namespace Carebed.Managers
         public void Stop()
         {
             throw new NotImplementedException();
+        }
+
+        /// <summary>
+        /// Call this when you render patient/sensor data to the GUI.
+        /// It logs the same payload so file output matches what's shown.
+        /// </summary>
+        public void ShowPatientData<T>(T patientDto)
+        {
+            // TODO: update the UI here (this method is the hook point).
+            // Log the payload using the project LoggingManager singleton.
+            LoggingManager.Instance.Log(
+                MessageOriginEnum.DisplayManager,
+                MessageTypeEnum.System,
+                "Display updated",
+                patientDto,
+                Infrastructure.Enums.LogLevelEnum.Info
+            );
         }
     }
 }
