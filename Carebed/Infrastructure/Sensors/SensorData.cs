@@ -15,9 +15,9 @@ namespace Carebed.Infrastructure.Message
         public DateTime CreatedAt { get; init; } = DateTime.UtcNow;
 
         /// <summary>
-        /// Gets the unique identifier used to correlate related operations or requests.
+        /// Gets an (optional) unique identifier used to correlate related operations or requests.
         /// </summary>
-        public Guid CorrelationId { get; init; } = Guid.NewGuid();
+        public Guid? CorrelationId { get; init; } = Guid.NewGuid();
 
         /// <summary>
         /// Gets the type of message represented by this instance.
@@ -27,8 +27,8 @@ namespace Carebed.Infrastructure.Message
         /// <summary>
         /// Optional source identifier associated with the data or event.
         /// </summary>
-        /// <remarks> This can be used to identify the origin of the data. </remarks>
-        string? IEventMessage.Source => Source;
+        ///// <remarks> This can be used to identify the origin of the data. </remarks>
+        //string? IEventMessage.Source => Source;
 
         /// <summary>
         /// An optional dictionary for additional metadata
