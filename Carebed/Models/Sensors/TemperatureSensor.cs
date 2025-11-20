@@ -1,5 +1,6 @@
-using System;
+using Carebed.Infrastructure.Enums;
 using Carebed.Infrastructure.Message.SensorMessages;
+using System;
 
 namespace Carebed.Domain.Sensors
 {
@@ -8,23 +9,16 @@ namespace Carebed.Domain.Sensors
     /// </summary>
     internal sealed class TemperatureSensor : AbstractSensor
     {
-        private readonly double _min;
-        private readonly double _max;
-        private readonly double _criticalThreshold;
-
         public TemperatureSensor(string source, double min = 35.0, double max = 40.0, double criticalThreshold = 45.0)
-            : base(source)
+            : base(source, min, max, criticalThreshold)
         {
-            _min = min;
-            _max = max;
-            _criticalThreshold = criticalThreshold;
         }
 
         public override SensorData ReadData()
         {
             var value = Random.Shared.NextDouble() * (_max - _min) + _min;
             var meta = BuildMetadata(("Unit", "°C"), ("Sensor", "Temperature"));
-            return new SensorData(value, Source, value >= _criticalThreshold, meta);
+            return new SensorData(value, SensorID, value >= _criticalThreshold, meta);
         }
     }
 }

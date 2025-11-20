@@ -8,26 +8,20 @@ namespace Carebed.Domain.Sensors
     /// </summary>
     internal sealed class HeartRateSensor : AbstractSensor
     {
-        private readonly int _min;
-        private readonly int _max;
         private readonly int _lowCritical;
-        private readonly int _highCritical;
 
         public HeartRateSensor(string source, int min = 40, int max = 130, int lowCritical = 40, int highCritical = 120)
-            : base(source)
+            : base(source, min, max, highCritical)
         {
-            _min = min;
-            _max = max;
             _lowCritical = lowCritical;
-            _highCritical = highCritical;
         }
 
         public override SensorData ReadData()
         {
-            var value = Random.Shared.Next(_min, _max + 1);
-            var isCritical = value < _lowCritical || value > _highCritical;
+            var value = Random.Shared.Next((Int32)_min, (Int32)_max + 1);
+            var isCritical = value < _lowCritical || value > _criticalThreshold;
             var meta = BuildMetadata(("Unit", "bpm"), ("Sensor", "HeartRate"));
-            return new SensorData(value, Source, isCritical, meta);
+            return new SensorData(value, SensorID, isCritical, meta);
         }
     }
 }

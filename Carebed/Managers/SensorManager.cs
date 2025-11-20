@@ -13,10 +13,15 @@ namespace Carebed.Managers
     /// </summary>
     internal class SensorManager : IManager
     {
+
+        #region Fields and Properties
+
         private readonly IEventBus _eventBus;
         private readonly List<ISensor> _sensors;
         private readonly System.Timers.Timer _timer;
         private int _isPolling;
+
+        #endregion
 
 
         /// <summary>
@@ -30,40 +35,87 @@ namespace Carebed.Managers
         /// <param name="eventBus">The event bus used to publish sensor data. Cannot be <see langword="null"/>.</param>
         /// <param name="sensors">The collection of sensors to be managed and polled. Cannot be <see langword="null"/> or empty.</param>
         /// <param name="intervalMilliseconds">The interval, in milliseconds, at which the sensors are polled. Defaults to 1000 milliseconds.</param>
-        /// <param name="synchronizingObject">An optional object used to marshal event-handler calls that are triggered by the polling timer. If <see
-        /// langword="null"/>, event-handler calls are not marshaled to a specific thread.</param>
         /// <exception cref="ArgumentNullException">Thrown if <paramref name="eventBus"/> is <see langword="null"/> or if <paramref name="sensors"/> is <see
         /// langword="null"/>.</exception>
-        public SensorManager(IEventBus eventBus, IEnumerable<ISensor> sensors, double intervalMilliseconds = 1000, ISynchronizeInvoke? synchronizingObject = null)
+        public SensorManager(IEventBus eventBus, List<ISensor> sensors, double intervalMilliseconds = 1000)
         {
             _eventBus = eventBus ?? throw new ArgumentNullException(nameof(eventBus));
-            _sensors = sensors?.ToList() ?? throw new ArgumentNullException(nameof(sensors));
+            _sensors = sensors ?? throw new ArgumentNullException(nameof(sensors));
 
+            // Create a timer to poll sensors at the specified interval
             _timer = new System.Timers.Timer(intervalMilliseconds) { AutoReset = true };
-            if (synchronizingObject is not null)
-                _timer.SynchronizingObject = synchronizingObject;
 
+            // Attach the polling method to the timer's Elapsed event (subscribe to event)
+            // Will fire once per interval
             _timer.Elapsed += (s, e) => _ = PollOnceAsync();
         }
 
         /// <summary>
-        /// Starts the timer(s) for the sensor(s).
+        /// Starts the timer and the sensor(s).
         /// </summary>
         public void Start()
-        {
+        {            
             foreach (var s in _sensors) s.Start();
-            //_eventBus.Initialize(); // This method is actually run in SystemInitializer and only needs to be run once - so I am commenting it out here. - M.S.
+            StartTimer();
+        }
+
+        /// <summary>
+        /// Stops the timer and the sensor(s).
+        /// </summary>
+        public void Stop()
+        {
+            StopTimer();
+            foreach (var s in _sensors) s.Stop();
+        }
+
+        /// <summary>
+        /// Start the internal polling timer.
+        /// </summary>
+        public void StartTimer()
+        {
             _timer.Start();
         }
 
         /// <summary>
-        /// Stops the timer(s) for the sensor(s).
+        /// Stop the internal polling timer.
         /// </summary>
-        public void Stop()
+        public void StopTimer()
         {
             _timer.Stop();
-            foreach (var s in _sensors) s.Stop();
-            //_eventBus.Shutdown(); // This method is actually run in SystemInitializer and only needs to be run once - so I am commenting it out here. - M.S.
+        }
+
+        /// <summary>
+        /// Start a specific sensor by its ID.
+        /// </summary>
+        /// <param name="sensorId"></param>
+        public void StartSensor(string sensorId)
+        {
+            var sensor = _sensors.Find(s => s.SensorID == sensorId);
+            sensor?.Start();
+        }
+
+        /// <summary>
+        /// Stop a specific sensor by its ID.
+        /// </summary>
+        /// <param name="sensorId"></param>
+        public void StopSensor(string sensorId)
+        {
+            var sensor = _sensors.Find(s => s.SensorID == sensorId);
+            sensor?.Stop();
+        }
+
+        /// <summary>
+        /// Allows adjustment of the polling interval at runtime.
+        /// </summary>
+        /// <param name="intervalSeconds"></param>
+        /// <returns></returns>
+        public bool AdjustPollingRate(double intervalSeconds)
+        {
+            if (intervalSeconds <= 0) return false;
+            if (intervalSeconds >= 60) return false;
+
+            _timer.Interval = intervalSeconds * 1000;
+            return true;
         }
 
         /// <summary>
@@ -94,7 +146,7 @@ namespace Carebed.Managers
                     }
                     catch (Exception exSensor)
                     {
-                        System.Diagnostics.Debug.WriteLine($"Sensor {sensor?.Source ?? "<unknown>"} read failed: {exSensor}");
+                        System.Diagnostics.Debug.WriteLine($"Sensor {sensor?.SensorID ?? "<unknown>"} read failed: {exSensor}");
                     }
                 }
 
@@ -126,7 +178,6 @@ namespace Carebed.Managers
         {
             Stop();
             _timer?.Dispose();
-            foreach (var s in _sensors) s.Dispose();
         }
     }
 }

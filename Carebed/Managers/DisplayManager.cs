@@ -1,9 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using Carebed.Infrastructure.Enums;
+﻿using Carebed.Infrastructure.Enums;
 
 namespace Carebed.Managers
 {
@@ -33,8 +28,8 @@ namespace Carebed.Managers
             // TODO: update the UI here (this method is the hook point).
             // Log the payload using the project LoggingManager singleton.
             LoggingManager.Instance.Log(
-                MessageOriginEnum.DisplayManager,
-                MessageTypeEnum.System,
+                MessageOrigin.DisplayManager,
+                MessageType.System,
                 "Display updated",
                 patientDto,
                 Infrastructure.Enums.LogLevelEnum.Info

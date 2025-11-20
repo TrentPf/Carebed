@@ -7,12 +7,12 @@ namespace Carebed.Domain.Sensors
     /// Minimal sensor contract used by the application composition root.
     /// Implementations return a <see cref="SensorData"/> snapshot when polled.
     /// </summary>
-    internal interface ISensor : IDisposable
+    public interface ISensor
     {
         /// <summary>
         /// Logical source/id for the sensor (e.g. "Room A").
         /// </summary>
-        string Source { get; }  
+        string SensorID { get; init; }
 
         /// <summary>
         /// Read a single snapshot of sensor data. This is called by the SensorManager every poll cycle.

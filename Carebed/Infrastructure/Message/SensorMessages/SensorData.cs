@@ -2,44 +2,33 @@
 
 namespace Carebed.Infrastructure.Message.SensorMessages
 {
-    public sealed record SensorData(
-        double Value,
-        string? Source = null,
-        bool IsCritical = false,
-        IReadOnlyDictionary<string, string>? Metadata = null
-    ) : IEventMessage
+    /// <summary>
+    /// Encapsulates a sensor data reading, including its value, source, criticality, and metadata.
+    /// </summary>
+    public record SensorData<TValue>
     {
-        /// <summary>
-        /// Timestamp when the event message was created.
-        /// </summary>
+        // The measured value from the sensor (e.g., temperature, heart rate)
+        public required TValue Value { get; init; }
+
+        // The unique identifier or logical name of the sensor (e.g., "tempSensor1", "RoomA_EEG")
+        public required string Source { get; init; }
+
+        // The type of sensor (e.g., Temperature, HeartRate, EEG)
+        public required SensorType SensorType { get; init; }
+
+        // Indicates if the reading is considered critical (e.g., out of safe range)
+        public required bool IsCritical { get; init; }
+
+        // Timestamp when the reading was taken
         public DateTime CreatedAt { get; init; } = DateTime.UtcNow;
 
-        /// <summary>
-        /// Gets an (optional) unique identifier used to correlate related operations or requests.
-        /// </summary>
+        // Optional: Unique identifier for correlating related messages/events
         public Guid CorrelationId { get; init; } = Guid.NewGuid();
 
-        /// <summary>
-        /// Gets the type of message represented by this instance.
-        /// </summary>
-        public MessageType MessageType { get; init; } = MessageType.SensorData;
+        // Optional: Additional metadata (units, calibration info, etc.)
+        public IReadOnlyDictionary<string, string>? Metadata { get; init; }
 
-        /// <summary>
-        /// Optional source identifier associated with the data or event.
-        /// </summary>
-        ///// <remarks> This can be used to identify the origin of the data. </remarks>
-        //string? IEventMessage.Source => Source;
-
-        /// <summary>
-        /// An optional dictionary for additional metadata
-        /// </summary>
-        /// <remarks> This can be used to store any extra information related to the event. </remarks>
-        IReadOnlyDictionary<string, string>? IEventMessage.Metadata => Metadata;
-
-        /// <summary>
-        /// A flag indicating whether the message is critical.
-        /// </summary>
-        /// <remarks> This flag can be used to prioritize processing of critical messages. </remarks>
-        bool IEventMessage.IsCritical => IsCritical;
+        // Optional: Sensor state at the time of reading (if relevant)
+        public SensorState? State { get; init; }
     }
 }

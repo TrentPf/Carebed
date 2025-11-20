@@ -1,18 +1,18 @@
 ﻿using Carebed.Infrastructure.Enums;
 
-namespace Carebed.Infrastructure.Message.Actuator
+namespace Carebed.Infrastructure.Message.SensorMessages
 {
-    public abstract class ActuatorMessageBase : IEventMessage
+    public abstract class SensorMessageBase : IEventMessage
     {
         /// <summary>
-        /// The unique identifier of the actuator involved in this message.
+        /// The unique identifier of the sensor involved in this message.
         /// </summary>
-        public required string ActuatorId { get; set; }
+        public required string SensorID { get; set; }
 
         /// <summary>
-        /// The type of actuator (e.g., BedLift, HeadTilt).
+        /// The type of sensor (e.g., Temperature, Pressure, HeartRate).
         /// </summary>
-        public required ActuatorType TypeOfActuator { get; set; }
+        public required SensorType TypeOfSensor { get; set; }
 
         /// <summary>
         /// Timestamp of when the message was created.
@@ -34,13 +34,9 @@ namespace Carebed.Infrastructure.Message.Actuator
         /// </summary>
         public bool IsCritical { get; set; } = false;
 
-        /// <summary>
-        /// A convenience method to provide a string representation of the actuator message.
-        /// </summary>
-        /// <returns></returns>
         public override string ToString()
         {
-            return $"{GetType().Name}: ActuatorId={ActuatorId}, TypeOfActuator={TypeOfActuator}, CreatedAt={CreatedAt}, CorrelationId={CorrelationId}, IsCritical={IsCritical}";
+            return $"SensorMessageBase: SensorID={SensorID}, TypeOfSensor={TypeOfSensor}, CreatedAt={CreatedAt}, CorrelationId={CorrelationId}, IsCritical={IsCritical}";
         }
     }
 }

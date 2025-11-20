@@ -6,7 +6,7 @@ namespace Carebed.Infrastructure.MessageEnvelope
     /// Defines the contract for an envelope that wraps event messages.
     /// Ensures consistency across modules and supports logging, debugging, and extensibility.
     /// </summary>
-    public interface IMessageEnvelope
+    public interface IMessageEnvelope: IDisposable
     {
         /// <summary>
         /// A unique identifier for the message envelope.

@@ -1,5 +1,4 @@
-using System;
-using System.Threading.Tasks;
+
 using Carebed.Infrastructure.Enums;
 using Carebed.Infrastructure.Logging;
 
@@ -26,15 +25,15 @@ namespace Carebed.Managers
             {
                 Timestamp = DateTimeOffset.UtcNow,
                 Level = level,
-                Origin = MessageOriginEnum.SensorManager,
-                Type = MessageTypeEnum.SensorData,
+                Origin = MessageOrigin.SensorManager,
+                Type = MessageType.SensorData,
                 Message = message,
                 PayloadJson = SerializePayload(payload)
             };
             _logger.Log(lm);
         }
 
-        public void Log(MessageOriginEnum origin, MessageTypeEnum type, string message, object? payload = null, LogLevelEnum level = LogLevelEnum.Info)
+        public void Log(MessageOrigin origin, MessageType type, string message, object? payload = null, LogLevelEnum level = LogLevelEnum.Info)
         {
             var lm = new LogMessage
             {

@@ -1,6 +1,6 @@
 ﻿using Carebed.Infrastructure.Enums;
 
-namespace Carebed.Infrastructure.EventBus
+namespace Carebed.Infrastructure.MessageEnvelope
 {
     /// <summary>
     /// A concrete implementation of IMessageEnvelope that wraps a strongly typed payload.
@@ -10,6 +10,7 @@ namespace Carebed.Infrastructure.EventBus
     /// </remarks>
     public class MessageEnvelope<T> : IMessageEnvelope
     {
+        #region Fields and Properties
         /// <summary>
         /// Unique identifier for the message envelope.
         /// </summary>
@@ -43,6 +44,10 @@ namespace Carebed.Infrastructure.EventBus
         /// </summary>
         object IMessageEnvelope.Payload => Payload!;
 
+        #endregion
+
+        #region Methods and Constructors
+
         /// <summary>
         /// This constructor initializes a new instance of the MessageEnvelope class.
         /// </summary>
@@ -74,5 +79,17 @@ namespace Carebed.Infrastructure.EventBus
             return $"[{Timestamp:O}] {MessageOrigin}::{MessageType} " +
                    $"(Id={MessageId}, PayloadType={typeof(T).Name})";
         }
+
+        public void Dispose()
+        {
+            // If T implements IDisposable, dispose of it
+            if (Payload is IDisposable disposablePayload)
+            {
+                disposablePayload.Dispose();
+            }
+            // Suppress finalization
+            GC.SuppressFinalize(this);
+        }
+        #endregion
     }
 }
