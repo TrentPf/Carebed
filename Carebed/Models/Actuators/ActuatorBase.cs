@@ -1,5 +1,4 @@
-﻿using Carebed.Domain.Actuators;
-using Carebed.Infrastructure.Enums;
+﻿using Carebed.Infrastructure.Enums;
 using Carebed.Infrastructure.Message.ActuatorMessages;
 
 namespace Carebed.Models.Actuators

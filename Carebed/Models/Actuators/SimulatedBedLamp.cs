@@ -1,8 +1,5 @@
-﻿using Carebed.Domain.Actuators;
-using Carebed.Infrastructure.Enums;
+﻿using Carebed.Infrastructure.Enums;
 using Carebed.Infrastructure.Message.ActuatorMessages;
-using System.Collections.Generic;
-using System.Security.AccessControl;
 
 namespace Carebed.Models.Actuators
 {
@@ -19,7 +16,7 @@ namespace Carebed.Models.Actuators
         #endregion
 
         #region Constructor(s)
-        public SimulatedBedLamp(string actuatorId): base(actuatorId, ActuatorType.Custom, GetTransitionMap())
+        public SimulatedBedLamp(string actuatorId): base(actuatorId, ActuatorType.Lamp, GetTransitionMap())
         {
         }
 

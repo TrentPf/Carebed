@@ -1,7 +1,6 @@
 using Carebed.Infrastructure.EventBus;
 using Carebed.Infrastructure.MessageEnvelope;
 using Carebed.Infrastructure.Enums;
-using Carebed.Managers;
 using Carebed.Infrastructure.Message.SensorMessages; // IManager
 
 
@@ -21,7 +20,7 @@ using Carebed.Infrastructure.Message.SensorMessages; // IManager
  * 
  */
 
-namespace Carebed.Infrastructure.Sensors
+namespace Carebed.Managers
 {
     public class SimulatedSensorManager : IManager
     {

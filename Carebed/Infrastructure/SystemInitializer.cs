@@ -1,8 +1,7 @@
-﻿using Carebed.Infrastructure.EventBus;
-using Carebed.Infrastructure.Sensors;
+﻿using Carebed.Infrastructure.Enums;
+using Carebed.Infrastructure.EventBus;
 using Carebed.Managers;
-//using Carebed.Models.Sensors; // for ISensor and concrete sensors
-using Carebed.Modules;
+using Carebed.Models.Actuators;
 
 namespace Carebed.Infrastructure
 {
@@ -20,14 +19,19 @@ namespace Carebed.Infrastructure
             //    // ... add more sensors as needed
             //};
 
+            IEnumerable<IActuator> actuators = new List<IActuator>
+            {
+                new SimulatedBedLamp("SimulatedBedLampActuator1")
+            };
+
             var sensorManager = new SimulatedSensorManager(eventBus);
-            // var actuatorManager = new ActuatorManager(eventBus, actuators);
+            var actuatorManager = new ActuatorManager(eventBus, actuators);
             // var displayManager = new DisplayManager(eventBus, displays);
 
             var managers = new List<IManager>
             {
-                sensorManager
-                // actuatorManager,
+                sensorManager,
+                actuatorManager
                 // displayManager
             };
 

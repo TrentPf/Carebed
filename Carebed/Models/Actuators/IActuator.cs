@@ -1,7 +1,7 @@
 ﻿using Carebed.Infrastructure.Enums;
 using Carebed.Infrastructure.Message.ActuatorMessages;
 
-namespace Carebed.Domain.Actuators
+namespace Carebed.Models.Actuators
 {
     public interface IActuator
     {

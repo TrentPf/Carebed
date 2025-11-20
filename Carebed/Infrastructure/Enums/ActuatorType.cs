@@ -16,6 +16,7 @@ namespace Carebed.Infrastructure.Enums
         LegRaise,      // Raises or lowers the leg section
         SideRail,      // Controls deployment of safety rails
         BedRoll,       // Enables lateral rolling or repositioning
+        Lamp,          // Controls the bed lamp (on/off)
         Custom         // Reserved for future or specialized actuators
     }
 

@@ -1,8 +1,8 @@
-﻿using Carebed.Domain.Actuators;
-using Carebed.Infrastructure.Enums;
+﻿using Carebed.Infrastructure.Enums;
 using Carebed.Infrastructure.EventBus;
 using Carebed.Infrastructure.Message.ActuatorMessages;
 using Carebed.Infrastructure.MessageEnvelope;
+using Carebed.Models.Actuators;
 
 namespace Carebed.Managers
 {

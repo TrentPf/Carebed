@@ -43,8 +43,6 @@ namespace Carebed
         /// <summary>
         /// Constructor for MainDashboard that accepts an IEventBus instance.
         /// </summary>
-        /// <param name="eventBus"></param>
-        /// <exception cref="ArgumentNullException"></exception>
         public MainDashboard(IEventBus eventBus, IManager sensorManager)
         {
             _eventBus = eventBus ?? throw new ArgumentNullException(nameof(eventBus));

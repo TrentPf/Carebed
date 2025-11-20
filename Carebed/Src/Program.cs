@@ -22,12 +22,10 @@ namespace Carebed.src
             var (eventBus, managers) = SystemInitializer.Initialize();
 
             // Start all managers.
-            //foreach (var manager in managers)
-            //{
-            //    manager.Start();
-            //}
-
-            managers.ElementAt(0).Start(); // Start SensorManager
+            foreach (var manager in managers)
+            {
+                manager.Start();
+            }
 
             // Optional: global exception hooks for UI/background threads
             Application.ThreadException += (s, e) =>
