@@ -1,6 +1,6 @@
 ﻿using Carebed.Infrastructure.Enums;
 
-namespace Carebed.Infrastructure.MessageEnvelope
+namespace Carebed.Infrastructure.EventBus
 {
     /// <summary>
     /// A concrete implementation of IMessageEnvelope that wraps a strongly typed payload.
