@@ -16,7 +16,8 @@
         ActuatorError,
         ActuatorTelemetry,
         System,
-        AlertAction
+        AlertAction,
+        AlertClearAck
         // Add more as needed
     }
 

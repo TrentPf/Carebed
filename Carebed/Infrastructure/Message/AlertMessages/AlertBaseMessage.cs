@@ -17,7 +17,7 @@ namespace Carebed.Infrastructure.Message.AlertMessages
         /// <summary>
         /// Represents a unique identifier to correlate related alert messages.
         /// </summary>
-        public Guid CorrelationId { get; } = Guid.NewGuid();
+        public Guid CorrelationId { get; init; } = Guid.NewGuid();
 
         /// <summary>
         /// A flag indicating whether the alert is critical.

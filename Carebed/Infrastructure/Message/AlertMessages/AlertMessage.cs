@@ -1,8 +1,6 @@
-﻿using Carebed.Infrastructure.Enums;
-
-namespace Carebed.Infrastructure.Message.AlertMessages
+﻿namespace Carebed.Infrastructure.Message.AlertMessages
 {
-    public class AlertMessage<TPayload> : AlertBaseMessage<TPayload>
+    public class AlertMessage<TPayload> : AlertBaseMessage<TPayload> where TPayload : IEventMessage
     {
     }
 }
