@@ -1,7 +1,7 @@
 ﻿using System;
 using Carebed.Infrastructure.Message.SensorMessages;
 
-namespace Carebed.Domain.Sensors
+namespace Carebed.Models.Sensors
 {
     /// <summary>
     /// Minimal sensor contract used by the application composition root.

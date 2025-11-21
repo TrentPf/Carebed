@@ -1,7 +1,7 @@
-using System;
+using Carebed.Infrastructure.Enums;
 using Carebed.Infrastructure.Message.SensorMessages;
 
-namespace Carebed.Domain.Sensors
+namespace Carebed.Models.Sensors
 {
     /// <summary>
     /// Simulated blood oxygen (SpO2) sensor.
@@ -15,9 +15,20 @@ namespace Carebed.Domain.Sensors
 
         public override SensorData ReadData()
         {
-            var value = Random.Shared.NextDouble() * (_max - _min) + _min;
+            double value = Random.Shared.NextDouble() * (_max - _min) + _min;
             var meta = BuildMetadata(("Unit", "%"), ("Sensor", "SpO2"));
-            return new SensorData(value, SensorID, value < _criticalThreshold, meta);
+            System.Guid correlationId = Guid.NewGuid();
+            
+            return new SensorData
+            {
+                Value = value,
+                Source = SensorID,
+                SensorType = SensorTypes.BloodOxygen,
+                IsCritical = (value < _criticalThreshold),
+                CreatedAt = DateTime.UtcNow,
+                CorrelationId = correlationId,
+                Metadata = meta
+            };
         }
     }
 }

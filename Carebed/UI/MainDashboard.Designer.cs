@@ -33,7 +33,7 @@ namespace Carebed
         private System.Windows.Forms.Timer refreshTimer;
 
         // in-memory sensor history storage
-        private readonly Dictionary<string, List<(DateTime Timestamp, double Value)>> _sensorHistory = new();
+        private readonly Dictionary<string, List<SensorData<object>>> _sensorHistory = new();
         private readonly object _historyLock = new();
 
         // sensor manager
@@ -59,7 +59,7 @@ namespace Carebed
         protected override void OnLoad(EventArgs e)
         {
             base.OnLoad(e);
-            _eventBus.Subscribe<SensorData>(HandleSensorData);
+            _eventBus.Subscribe<SensorTelemetryMessage>(HandleSensorData);
 
             // Do NOT start the sensor manager automatically. User must press Start.
             // _sensorManager.Start(); // removed to prevent automatic sensor start
@@ -76,25 +76,27 @@ namespace Carebed
         /// Handler for incoming SensorData messages.
         /// </summary>
         /// <param name="envelope"></param>
-        private void HandleSensorData(MessageEnvelope<SensorData> envelope)
+        private void HandleSensorData(MessageEnvelope<SensorTelemetryMessage> envelope)
         {
             // fast guard: if form is closing/disposed, ignore the update
             if (IsDisposed || Disposing || !_sensorsRunning) return;
 
             // store in history, then schedule UI update via timer to reduce UI churn
-            var source = envelope.Payload.Source ?? "Unknown";
+            var source = envelope.Payload.SensorID ?? "Unknown";
             var timestamp = envelope.Timestamp != default ? envelope.Timestamp : DateTime.Now;
-            var value = envelope.Payload.Value;
+            var value = envelope.Payload.Data.Value;
 
             lock (_historyLock)
             {
+                // Check to see if an entry for this sensor already exists
                 if (!_sensorHistory.TryGetValue(source, out var list))
                 {
-                    list = new List<(DateTime, double)>();
+                    // An entry does not exist, create a new list for this sensor
+                    list = new List<SensorData<object>>();
                     _sensorHistory[source] = list;
                 }
 
-                list.Add((timestamp, value));
+                list.Add(envelope.Payload.Data);
 
                 // cap history to last 5000 entries per sensor to avoid unbounded growth
                 if (list.Count > 5000)
@@ -150,7 +152,7 @@ namespace Carebed
             }
             catch { }
 
-            _eventBus.Unsubscribe<SensorData>(HandleSensorData);
+            _eventBus.Unsubscribe<SensorTelemetryMessage>(HandleSensorData);
             base.OnFormClosed(e);
         }
 
@@ -312,7 +314,7 @@ namespace Carebed
                 {
                     var list = kvp.Value;
                     var last = list.LastOrDefault();
-                    return (Sensor: kvp.Key, LastTime: last.Timestamp, LastValue: last.Value, Count: list.Count);
+                    return (Sensor: kvp.Key, LastTime: last.CreatedAt, LastValue: last.Value, Count: list.Count);
                 }).ToList();
             }
 

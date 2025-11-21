@@ -2,6 +2,6 @@
 {
     public class SensorTelemetryMessage: SensorMessageBase
     {
-        public required SensorData<object> Payload { get; set; }
+        public required SensorData Data { get; set; }
     }
 }

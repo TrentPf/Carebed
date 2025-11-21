@@ -1,7 +1,8 @@
-using System;
+using Carebed.Infrastructure.Enums;
 using Carebed.Infrastructure.Message.SensorMessages;
+using System;
 
-namespace Carebed.Domain.Sensors
+namespace Carebed.Models.Sensors
 {
     /// <summary>
     /// Simulated heart rate sensor (beats per minute).
@@ -21,7 +22,17 @@ namespace Carebed.Domain.Sensors
             var value = Random.Shared.Next((Int32)_min, (Int32)_max + 1);
             var isCritical = value < _lowCritical || value > _criticalThreshold;
             var meta = BuildMetadata(("Unit", "bpm"), ("Sensor", "HeartRate"));
-            return new SensorData(value, SensorID, isCritical, meta);
+            System.Guid correlationId = Guid.NewGuid();
+            return new SensorData
+            {
+                Value = value,
+                Source = SensorID,
+                SensorType = SensorTypes.HeartRate,
+                IsCritical = (value < _criticalThreshold),
+                CreatedAt = DateTime.UtcNow,
+                CorrelationId = correlationId,
+                Metadata = meta
+            };
         }
     }
 }

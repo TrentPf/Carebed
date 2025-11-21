@@ -13,7 +13,7 @@ namespace Carebed.Infrastructure.Enums
         Pressure,
         Motion,
         HeartRate,
-        OxygenSaturation,
+        BloodOxygen,
         EEG,
     }
 }

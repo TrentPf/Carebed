@@ -2,7 +2,7 @@
 
 namespace Carebed.Infrastructure.Message.SensorMessages
 {
-    public class SensorErrorMessage
+    public class SensorErrorMessage: SensorMessageBase
     {
         /// <summary>
         /// An error code representing the fault condition.

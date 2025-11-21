@@ -1,12 +1,11 @@
-using System;
-using System.Collections.Generic;
+
 using System.ComponentModel;
 using Carebed.Infrastructure.EventBus;
 using Carebed.Infrastructure.MessageEnvelope;
 using Carebed.Infrastructure.Enums;
 using Carebed.Infrastructure.Message.SensorMessages;
 
-namespace Carebed.Modules.Sensor
+namespace Carebed
 {
     /// <summary>
     /// WinForms-friendly sensor device that polls periodically and publishes

@@ -15,7 +15,8 @@
         ActuatorStatus,
         ActuatorError,
         ActuatorTelemetry,
-        System
+        System,
+        AlertAction
         // Add more as needed
     }
 

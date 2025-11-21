@@ -2,7 +2,7 @@ using Carebed.Infrastructure.Enums;
 using Carebed.Infrastructure.Message.SensorMessages;
 using Carebed.Models.Actuators;
 
-namespace Carebed.Domain.Sensors
+namespace Carebed.Models.Sensors
 {   
     /// <summary>
     /// Base implementation for sensors. Provides Source property and basic lifecycle stubs.

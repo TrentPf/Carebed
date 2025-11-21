@@ -2,7 +2,7 @@
 
 namespace Carebed.Infrastructure.Message.SensorMessages
 {
-    public class SensorCommandMessage
+    public class SensorCommandMessage: SensorMessageBase
     {
         /// <summary>
         /// The type of command to execute (e.g., Raise, Lower, Stop).

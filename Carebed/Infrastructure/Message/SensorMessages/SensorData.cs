@@ -5,10 +5,10 @@ namespace Carebed.Infrastructure.Message.SensorMessages
     /// <summary>
     /// Encapsulates a sensor data reading, including its value, source, criticality, and metadata.
     /// </summary>
-    public record SensorData<TValue>
+    public record SensorData
     {
         // The measured value from the sensor (e.g., temperature, heart rate)
-        public required TValue Value { get; init; }
+        public required double Value { get; init; }
 
         // The unique identifier or logical name of the sensor (e.g., "tempSensor1", "RoomA_EEG")
         public required string Source { get; init; }
@@ -30,5 +30,10 @@ namespace Carebed.Infrastructure.Message.SensorMessages
 
         // Optional: Sensor state at the time of reading (if relevant)
         public SensorStates? State { get; init; }
+
+        public override string ToString()
+        {
+            return $"SensorData: Value={Value}, Source={Source}, SensorType={SensorType}, IsCritical={IsCritical}, CreatedAt={CreatedAt}, CorrelationId={CorrelationId}";
+        }
     }
 }
