@@ -4,6 +4,13 @@ namespace Carebed.Managers
 {
     internal class DisplayManager : IManager
     {
+        private readonly LoggingManager _loggingManager;
+
+        public DisplayManager(LoggingManager loggingManager)
+        {
+            _loggingManager = loggingManager;
+        }
+
         public void Dispose()
         {
             throw new NotImplementedException();
@@ -27,7 +34,7 @@ namespace Carebed.Managers
         {
             // TODO: update the UI here (this method is the hook point).
             // Log the payload using the project LoggingManager singleton.
-            LoggingManager.Instance.Log(
+            _loggingManager.Log(
                 MessageOrigins.DisplayManager,
                 MessageTypes.System,
                 "Display updated",
