@@ -38,7 +38,7 @@ namespace Carebed.Models.Sensors
         /// </summary>
         public SensorStates CurrentState => _stateMachine.Current;
 
-        public required SensorTypes SensorType { get; init; }
+        public SensorTypes SensorType { get; init; }
 
         /// <summary>
         /// A state machine to manage the actuator's states and transitions.
@@ -69,7 +69,7 @@ namespace Carebed.Models.Sensors
         /// <summary>
         /// Event triggered when the actuator transitions to a new state.
         /// </summary>
-        public event Action<ActuatorStates>? OnStateChanged;
+        public event Action<SensorStates>? OnStateChanged;
 
         #endregion
 
@@ -94,9 +94,34 @@ namespace Carebed.Models.Sensors
         }
 
         /// <summary>
-        /// Return a single snapshot of sensor data. Implementations should include unit metadata.
+        /// Resets the sensor to the Initialized state by transitioning through Uninitialized,
+        /// Initialized, and then finally back into Running.
         /// </summary>
-        public abstract SensorData ReadData();  
+        public virtual void Reset()
+        {
+            _stateMachine.TryTransition(SensorStates.Uninitialized);
+            _stateMachine.TryTransition(SensorStates.Initialized);
+            _stateMachine.TryTransition(SensorStates.Running);
+        }
+
+        /// <summary>
+        /// Reads data from a sensor, as long as it is in the Running state.
+        /// </summary>
+        /// <returns></returns>
+        /// <exception cref="InvalidOperationException"></exception>
+        public SensorData ReadData()
+        {
+            if (CurrentState != SensorStates.Running)
+                throw new InvalidOperationException($"Cannot read data unless sensor is in Running state. Current state: {CurrentState}");
+
+            return ReadDataActual();
+        }
+
+        /// <summary>
+        /// This is the actual ReadData implementation that derived classes must implement.
+        /// </summary>
+        /// <returns></returns>
+        public abstract SensorData ReadDataActual();
 
         /// <summary>
         /// Gets the transition map for the sensor's states. Can be overridden by derived classes to customize state transitions.
@@ -105,15 +130,15 @@ namespace Carebed.Models.Sensors
         protected virtual Dictionary<SensorStates, SensorStates[]> GetTransitionMap()
         {
             return new Dictionary<SensorStates, SensorStates[]>
-    {
-        { SensorStates.Uninitialized, new[] { SensorStates.Initialized, SensorStates.Error } },
-        { SensorStates.Initialized, new[] { SensorStates.Running, SensorStates.Error } },
-        { SensorStates.Running, new[] { SensorStates.Initialized, SensorStates.Stopped, SensorStates.Error } },
-        { SensorStates.Stopped, new[] { SensorStates.Running, SensorStates.Calibrating, SensorStates.Error } },
-        { SensorStates.Calibrating, new[] { SensorStates.Initialized, SensorStates.Error } },
-        { SensorStates.Error, new[] { SensorStates.Uninitialized, SensorStates.Disconnected } },
-        { SensorStates.Disconnected, new[] { SensorStates.Uninitialized } }
-    };
+            {
+                { SensorStates.Uninitialized, new[] { SensorStates.Initialized, SensorStates.Error } },
+                { SensorStates.Initialized, new[] { SensorStates.Running, SensorStates.Error } },
+                { SensorStates.Running, new[] { SensorStates.Initialized, SensorStates.Stopped, SensorStates.Error } },
+                { SensorStates.Stopped, new[] { SensorStates.Running, SensorStates.Calibrating, SensorStates.Error } },
+                { SensorStates.Calibrating, new[] { SensorStates.Initialized, SensorStates.Error } },
+                { SensorStates.Error, new[] { SensorStates.Uninitialized, SensorStates.Disconnected } },
+                { SensorStates.Disconnected, new[] { SensorStates.Uninitialized } }
+            };
         }
 
         /// <summary>

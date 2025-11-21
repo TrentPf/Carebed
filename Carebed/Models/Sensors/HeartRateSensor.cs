@@ -11,13 +11,13 @@ namespace Carebed.Models.Sensors
     {
         private readonly int _lowCritical;
 
-        public HeartRateSensor(string source, SensorTypes sensorType = SensorTypes.HeartRate, int min = 40, int max = 130, int lowCritical = 40, int highCritical = 120)
-            : base(source, sensorType, min, max, highCritical)
+        public HeartRateSensor(string sensorID, SensorTypes sensorType = SensorTypes.HeartRate, int min = 40, int max = 130, int lowCritical = 40, int highCritical = 120)
+            : base(sensorID, sensorType, min, max, highCritical)
         {
             _lowCritical = lowCritical;
         }
 
-        public override SensorData ReadData()
+        public override SensorData ReadDataActual()
         {
             var value = Random.Shared.Next((Int32)_min, (Int32)_max + 1);
             var isCritical = value < _lowCritical || value > _criticalThreshold;

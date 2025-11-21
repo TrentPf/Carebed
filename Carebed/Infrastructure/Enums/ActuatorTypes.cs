@@ -17,7 +17,8 @@ namespace Carebed.Infrastructure.Enums
         SideRail,      // Controls deployment of safety rails
         BedRoll,       // Enables lateral rolling or repositioning
         Lamp,          // Controls the bed lamp (on/off)
-        Custom         // Reserved for future or specialized actuators
+        Custom,         // Reserved for future or specialized actuators
+        Manager
     }
 
 }

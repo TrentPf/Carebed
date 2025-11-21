@@ -8,12 +8,12 @@ namespace Carebed.Models.Sensors
     /// </summary>
     internal sealed class BloodOxygenSensor : AbstractSensor
     {
-        public BloodOxygenSensor(string source, SensorTypes sensorType = SensorTypes.BloodOxygen, double min = 85.0, double max = 100.0, double criticalThreshold = 90.0)
-            : base(source, sensorType, min, max, criticalThreshold)
+        public BloodOxygenSensor(string sensorID, SensorTypes sensorType = SensorTypes.BloodOxygen, double min = 85.0, double max = 100.0, double criticalThreshold = 90.0)
+            : base(sensorID, sensorType, min, max, criticalThreshold)
         {
         }
 
-        public override SensorData ReadData()
+        public override SensorData ReadDataActual()
         {
             double value = Random.Shared.NextDouble() * (_max - _min) + _min;
             var meta = BuildMetadata(("Unit", "%"), ("Sensor", "SpO2"));

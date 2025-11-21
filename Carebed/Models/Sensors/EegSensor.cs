@@ -10,12 +10,12 @@ namespace Carebed.Models.Sensors
     internal sealed class EegSensor : AbstractSensor
     {
 
-        public EegSensor(string source, SensorTypes sensorType = SensorTypes.EEG , double min = 0.0, double max = 100.0, double criticalThreshold = 90.0)
-            : base(source, sensorType, min, max, criticalThreshold)
+        public EegSensor(string sensorID, SensorTypes sensorType = SensorTypes.EEG , double min = 0.0, double max = 100.0, double criticalThreshold = 90.0)
+            : base(sensorID, sensorType, min, max, criticalThreshold)
         {
         }
 
-        public override SensorData ReadData()
+        public override SensorData ReadDataActual()
         {
             var value = Random.Shared.NextDouble() * (_max - _min) + _min;
             var meta = BuildMetadata(("Unit", "uV"), ("Sensor", "EEG"));

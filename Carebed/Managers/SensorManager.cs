@@ -1,7 +1,9 @@
-﻿using Carebed.Infrastructure.EventBus;
-using Carebed.Infrastructure.MessageEnvelope;
-using Carebed.Infrastructure.Enums;
+﻿using Carebed.Infrastructure.Enums;
+using Carebed.Infrastructure.EventBus;
+using Carebed.Infrastructure.Message.ActuatorMessages;
 using Carebed.Infrastructure.Message.SensorMessages;
+using Carebed.Infrastructure.MessageEnvelope;
+using Carebed.Models.Actuators;
 using Carebed.Models.Sensors;
 
 namespace Carebed.Managers
@@ -20,6 +22,11 @@ namespace Carebed.Managers
         private readonly System.Timers.Timer _timer;
         private int _isPolling;
 
+        /// <summary>
+        /// A dictionary for mapping sensors to their state change handlers.
+        /// </summary>
+        private readonly Dictionary<ISensor, Action<SensorStates>> _stateChangedHandlers = new();
+
         #endregion
 
 
@@ -32,14 +39,14 @@ namespace Carebed.Managers
         /// <paramref name="synchronizingObject"/> is provided, the timer ensures that event-handler calls are
         /// marshaled to the thread that owns the synchronizing object.</remarks>
         /// <param name="eventBus">The event bus used to publish sensor data. Cannot be <see langword="null"/>.</param>
-        /// <param name="sensors">The collection of sensors to be managed and polled. Cannot be <see langword="null"/> or empty.</param>
+        /// <param name="sensorList">The collection of sensors to be managed and polled. Cannot be <see langword="null"/> or empty.</param>
         /// <param name="intervalMilliseconds">The interval, in milliseconds, at which the sensors are polled. Defaults to 1000 milliseconds.</param>
-        /// <exception cref="ArgumentNullException">Thrown if <paramref name="eventBus"/> is <see langword="null"/> or if <paramref name="sensors"/> is <see
+        /// <exception cref="ArgumentNullException">Thrown if <paramref name="eventBus"/> is <see langword="null"/> or if <paramref name="sensorList"/> is <see
         /// langword="null"/>.</exception>
-        public SensorManager(IEventBus eventBus, List<ISensor> sensors, double intervalMilliseconds = 1000)
+        public SensorManager(IEventBus eventBus, List<ISensor> sensorList, double intervalMilliseconds = 1000)
         {
             _eventBus = eventBus ?? throw new ArgumentNullException(nameof(eventBus));
-            _sensors = sensors ?? throw new ArgumentNullException(nameof(sensors));
+            _sensors = sensorList ?? throw new ArgumentNullException(nameof(sensorList));
 
             // Create a timer to poll sensors at the specified interval
             _timer = new System.Timers.Timer(intervalMilliseconds) { AutoReset = true };
@@ -47,6 +54,22 @@ namespace Carebed.Managers
             // Attach the polling method to the timer's Elapsed event (subscribe to event)
             // Will fire once per interval
             _timer.Elapsed += (s, e) => _ = PollOnceAsync();
+
+            // Future improvement: Check for duplicate actuator IDs and handle accordingly.
+            foreach (var sensor in sensorList)
+            {
+                Action<SensorStates> handler = state => HandleStateChanged(sensor, state);
+                _stateChangedHandlers[sensor] = handler;
+                sensor.OnStateChanged += handler;
+                _sensors.Add(sensor);            }
+
+            // Emit initial inventory message
+            EmitSensorInventoryMessage();
+        }
+
+        private void HandleStateChanged(ISensor sensor, SensorStates state)
+        {
+            throw new NotImplementedException();
         }
 
         /// <summary>
@@ -187,6 +210,37 @@ namespace Carebed.Managers
         {
             Stop();
             _timer?.Dispose();
+
+            // Iterate through the sensors and unsubscribe from their state change events
+            foreach (var item in _stateChangedHandlers)
+                item.Key.OnStateChanged -= item.Value;
+            _stateChangedHandlers.Clear();
+        }
+
+        public void EmitSensorInventoryMessage()
+        {
+            var metadata = new Dictionary<string, string>();
+
+            foreach (var sensor in _sensors)
+            {
+                metadata[sensor.SensorID] = sensor.SensorType.ToString();
+            }
+
+            var inventoryMessage = new SensorInventoryMessage
+            {
+                SensorID = "SensorManager",
+                TypeOfSensor = SensorTypes.Manager,
+                Metadata = metadata
+            };
+            var envelope = new MessageEnvelope<SensorInventoryMessage>(
+                inventoryMessage,
+                MessageOrigins.SensorManager,
+                MessageTypes.SensorInventory
+            );
+
+            // Fire-and-forget the async publish; BasicEventBus executes handlers on thread-pool.
+            _ = _eventBus.PublishAsync(envelope);
+
         }
     }
 }

@@ -15,5 +15,6 @@ namespace Carebed.Infrastructure.Enums
         HeartRate,
         BloodOxygen,
         EEG,
+        Manager,
     }
 }

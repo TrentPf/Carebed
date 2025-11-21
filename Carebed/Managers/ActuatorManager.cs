@@ -3,6 +3,7 @@ using Carebed.Infrastructure.EventBus;
 using Carebed.Infrastructure.Message.ActuatorMessages;
 using Carebed.Infrastructure.MessageEnvelope;
 using Carebed.Models.Actuators;
+using System;
 
 namespace Carebed.Managers
 {
@@ -29,6 +30,9 @@ namespace Carebed.Managers
                 actuator.OnStateChanged += handler;
                 _actuators[actuator.ActuatorId] = actuator;
             }
+
+            // Emit the initial inventory message
+            EmitActuatorInventoryMessage();
         }
 
         /// <summary>
@@ -80,19 +84,11 @@ namespace Carebed.Managers
             }
         }
 
-        public void Dispose()
-        {
-            // Iterate through the actuators and unsubscribe from their state change events
-            foreach (var item in _stateChangedHandlers)
-                item.Key.OnStateChanged -= item.Value;
-            _stateChangedHandlers.Clear();
-        }
 
-        public void Start()
-        {
-            _eventBus.Subscribe<ActuatorCommandMessage>(HandleActuatorCommand);
-        }
-
+        /// <summary>
+        /// Handles incoming ActuatorCommandMessage events.
+        /// </summary>
+        /// <param name="envelope"></param>
         private async void HandleActuatorCommand(MessageEnvelope<ActuatorCommandMessage> envelope)
         {
             var commandMessage = envelope.Payload;
@@ -121,7 +117,10 @@ namespace Carebed.Managers
             }
         }
 
-
+        /// <summary>
+        /// Publishes an ActuatorCommandAckMessage to the event bus.
+        /// Used to acknowledge receipt and execution capability of actuator commands.
+        /// </summary>
         private async Task PublishCommandAckAsync(ActuatorCommandMessage actuatorCommandMessage, bool canExecute)
         {
             var ackMessage = new ActuatorCommandAckMessage
@@ -142,9 +141,60 @@ namespace Carebed.Managers
             await _eventBus.PublishAsync(envelope);
         }
 
+        /// <summary>
+        /// Stops the ActuatorManager by unsubscribing from ActuatorCommandMessage events.
+        /// </summary>
         public void Stop()
         {
             _eventBus.Unsubscribe<ActuatorCommandMessage>(HandleActuatorCommand);
+        }
+
+        /// <summary>
+        /// Starts the ActuatorManager by subscribing to ActuatorCommandMessage events.
+        /// </summary>
+        public void Start()
+        {
+            _eventBus.Subscribe<ActuatorCommandMessage>(HandleActuatorCommand);
+        }
+
+        /// <summary>
+        /// Emits an ActuatorInventoryMessage containing the list of managed actuators and their types.
+        /// </summary>
+        public void EmitActuatorInventoryMessage()
+        {
+            var metadata = new Dictionary<string, string>();
+
+            foreach(var actuator in _actuators.Values)
+            {
+                metadata[actuator.ActuatorId] = actuator.Type.ToString();
+            }
+
+            var inventoryMessage = new ActuatorInventoryMessage
+            {
+                ActuatorId = "ActuatorManager",
+                TypeOfActuator = ActuatorTypes.Manager,
+                Metadata = metadata
+            };
+            var envelope = new MessageEnvelope<ActuatorInventoryMessage>(
+                inventoryMessage,
+                MessageOrigins.ActuatorManager,
+                MessageTypes.ActuatorInventory
+            );
+
+            // Fire-and-forget the async publish; BasicEventBus executes handlers on thread-pool.
+            _ = _eventBus.PublishAsync(envelope);
+
+        }
+
+        /// <summary>
+        /// Disposes the ActuatorManager by unsubscribing from all actuator state change events.
+        /// </summary>
+        public void Dispose()
+        {
+            // Iterate through the actuators and unsubscribe from their state change events
+            foreach (var item in _stateChangedHandlers)
+                item.Key.OnStateChanged -= item.Value;
+            _stateChangedHandlers.Clear();
         }
     }
 }

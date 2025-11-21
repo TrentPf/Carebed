@@ -17,7 +17,9 @@
         ActuatorTelemetry,
         System,
         AlertAction,
-        AlertClearAck
+        AlertClearAck,
+        ActuatorInventory,
+        SensorInventory
         // Add more as needed
     }
 
