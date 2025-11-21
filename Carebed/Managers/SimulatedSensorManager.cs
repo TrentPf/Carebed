@@ -1,7 +1,7 @@
-using Carebed.Infrastructure.EventBus;
-using Carebed.Infrastructure.MessageEnvelope;
 using Carebed.Infrastructure.Enums;
+using Carebed.Infrastructure.EventBus;
 using Carebed.Infrastructure.Message.SensorMessages; // IManager
+using Carebed.Infrastructure.MessageEnvelope;
 
 
 /*
@@ -115,9 +115,33 @@ namespace Carebed.Managers
                     foreach (var s in _sensors)
                     {
                         var value = s.NextValue();
-                        var payload = new SensorData(value, s.Name);
-                        var envelope = new MessageEnvelope<SensorData>(payload, MessageOrigins.SensorManager, MessageTypes.SensorData);
-                        _ = _eventBus.PublishAsync(envelope);
+
+                        SensorData payload = new SensorData
+                        {
+                            Value = value,
+                            Source = "SimulatedTemperatureSensor1",
+                            SensorType = SensorTypes.Temperature,
+                            IsCritical = false,
+                            CreatedAt = DateTime.UtcNow,
+                            CorrelationId = Guid.NewGuid(),
+                            Metadata = new Dictionary<string, string>
+                            {
+                                { "Unit", "units" },
+                                { "Sensor", "SimulatedTemperatureSensor1" }
+                            }
+                        };
+                        SensorTelemetryMessage newSensorTelemetryMessage = new SensorTelemetryMessage
+                        {
+                            SensorID = payload.Source,
+                            TypeOfSensor = payload.SensorType,
+                            Data = payload,
+                            CreatedAt = DateTime.UtcNow,
+                            CorrelationId = Guid.NewGuid(),
+                            Metadata = null,
+                            IsCritical = false
+                        };
+                        var envelope = new MessageEnvelope<SensorTelemetryMessage>(newSensorTelemetryMessage, MessageOrigins.SensorManager, MessageTypes.SensorData);
+                        await _eventBus.PublishAsync(envelope);
                     }
 
                     await Task.Delay(_intervalMs, token).ConfigureAwait(false);

@@ -1,15 +1,16 @@
 ﻿using Carebed.Infrastructure.Enums;
 using Carebed.Infrastructure.EventBus;
+using Carebed.Infrastructure.Message.SensorMessages;
 using Carebed.Infrastructure.MessageEnvelope;
+using Carebed.Managers;
+using Carebed.Models.Sensors;
 using System.Collections.Generic;
 using System.Linq;
-using Carebed.Managers;
-using Carebed.Modules;
-using Carebed.Infrastructure.Message.SensorMessages;
+using System.Windows.Forms;
 
-namespace Carebed
+namespace Carebed.UI
 {
-    partial class MainDashboard
+    partial class MainDashboard : Form 
     {
         /// <summary>
         ///  Required designer variable.
@@ -33,7 +34,7 @@ namespace Carebed
         private System.Windows.Forms.Timer refreshTimer;
 
         // in-memory sensor history storage
-        private readonly Dictionary<string, List<SensorData<object>>> _sensorHistory = new();
+        private readonly Dictionary<string, Dictionary<DateTime, SensorData>> _sensorHistory = new();
         private readonly object _historyLock = new();
 
         // sensor manager
@@ -89,18 +90,23 @@ namespace Carebed
             lock (_historyLock)
             {
                 // Check to see if an entry for this sensor already exists
-                if (!_sensorHistory.TryGetValue(source, out var list))
+                if (!_sensorHistory.TryGetValue(source, out var dict))
                 {
                     // An entry does not exist, create a new list for this sensor
-                    list = new List<SensorData<object>>();
-                    _sensorHistory[source] = list;
+                    dict = new Dictionary<DateTime, SensorData>();
+                    _sensorHistory[source] = dict;
                 }
 
-                list.Add(envelope.Payload.Data);
+                dict.Add(timestamp, envelope.Payload.Data);
 
                 // cap history to last 5000 entries per sensor to avoid unbounded growth
-                if (list.Count > 5000)
-                    list.RemoveRange(0, list.Count - 5000);
+                if (dict.Count > 5000)
+                {
+                    // Remove oldest entries to keep only the last 5000
+                    var keysToRemove = dict.Keys.OrderBy(k => k).Take(dict.Count - 5000).ToList();
+                    foreach (var key in keysToRemove)
+                        dict.Remove(key);
+                }
             }
 
             // update transport log quickly on UI thread
@@ -312,9 +318,17 @@ namespace Carebed
             {
                 snapshot = _sensorHistory.Select(kvp =>
                 {
-                    var list = kvp.Value;
-                    var last = list.LastOrDefault();
-                    return (Sensor: kvp.Key, LastTime: last.CreatedAt, LastValue: last.Value, Count: list.Count);
+                    var dict = kvp.Value;
+                    if (dict.Count == 0)
+                        return (Sensor: kvp.Key, LastTime: DateTime.MinValue, LastValue: 0, Count: 0);
+
+                    var lastEntry = dict.OrderByDescending(x => x.Key).First();
+                    return (
+                        Sensor: kvp.Key,
+                        LastTime: lastEntry.Key,
+                        LastValue: lastEntry.Value.Value,
+                        Count: dict.Count
+                    );
                 }).ToList();
             }
 
@@ -362,20 +376,25 @@ namespace Carebed
         /// </summary>
         private void UpdateHistoryGrid(string sensorKey)
         {
-            List<(DateTime Timestamp, double Value)> items;
+            Dictionary<DateTime, SensorData> items;
             lock (_historyLock)
             {
                 if (!_sensorHistory.TryGetValue(sensorKey, out items))
-                    items = new List<(DateTime, double)>();
+                    items = new Dictionary<DateTime, SensorData>();
                 else
-                    items = new List<(DateTime, double)>(items);
+                    items = new Dictionary<DateTime, SensorData>(items);
             }
+
+            // Now, create a list of tuples for display:
+
+            //var historyList = items.Select(kvp => (kvp.Key, kvp.Value)).ToList();
+            var historyList = items.OrderByDescending(kvp => kvp.Key).Take(200);
 
             historyGridView.SuspendLayout();
             historyGridView.Rows.Clear();
-            foreach (var it in items.OrderByDescending(i => i.Timestamp).Take(200))
+            foreach (var it in historyList)
             {
-                historyGridView.Rows.Add(it.Timestamp.ToString("yyyy-MM-dd HH:mm:ss.fff"), it.Value.ToString("F2"));
+                historyGridView.Rows.Add(it.Value.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss.fff"), it.Value.Value.ToString("F2"));
             }
             historyGridView.ResumeLayout();
         }

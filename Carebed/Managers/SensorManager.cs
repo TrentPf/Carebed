@@ -1,9 +1,8 @@
-﻿using System.ComponentModel;
-using Carebed.Domain.Sensors;
-using Carebed.Infrastructure.EventBus;
+﻿using Carebed.Infrastructure.EventBus;
 using Carebed.Infrastructure.MessageEnvelope;
 using Carebed.Infrastructure.Enums;
 using Carebed.Infrastructure.Message.SensorMessages;
+using Carebed.Models.Sensors;
 
 namespace Carebed.Managers
 {
@@ -141,7 +140,17 @@ namespace Carebed.Managers
                     try
                     {
                         var payload = sensor.ReadData();
-                        var envelope = new MessageEnvelope<SensorData>(payload, MessageOrigins.SensorManager, MessageTypes.SensorData);
+                        SensorTelemetryMessage newSensorTelemetryMessage = new SensorTelemetryMessage
+                        {
+                            SensorID = sensor.SensorID,
+                            TypeOfSensor = payload.SensorType,
+                            Data = payload,
+                            CreatedAt = DateTime.UtcNow,
+                            CorrelationId = Guid.NewGuid(),
+                            Metadata = null,
+                            IsCritical = false
+                        };
+                        var envelope = new MessageEnvelope<SensorTelemetryMessage>(newSensorTelemetryMessage, MessageOrigins.SensorManager, MessageTypes.SensorData);
                         publishTasks.Add(_eventBus.PublishAsync(envelope));
                     }
                     catch (Exception exSensor)

@@ -38,6 +38,8 @@ namespace Carebed.Models.Sensors
         /// </summary>
         public SensorStates CurrentState => _stateMachine.Current;
 
+        public required SensorTypes SensorType { get; init; }
+
         /// <summary>
         /// A state machine to manage the actuator's states and transitions.
         /// </summary>
@@ -50,9 +52,10 @@ namespace Carebed.Models.Sensors
         /// <summary>
         /// Constructor for the AbstractSensor class.
         /// </summary>
-        protected AbstractSensor(string sensorID, double min, double max, double criticalThreshold)
+        protected AbstractSensor(string sensorID, SensorTypes sensorType, double min, double max, double criticalThreshold)
         {
             SensorID = sensorID ?? throw new ArgumentNullException(nameof(sensorID));
+            SensorType = sensorType;
             _min = min;
             _max = max;
             _criticalThreshold = criticalThreshold; 

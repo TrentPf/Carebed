@@ -8,8 +8,8 @@ namespace Carebed.Models.Sensors
     /// </summary>
     internal sealed class BloodOxygenSensor : AbstractSensor
     {
-        public BloodOxygenSensor(string source, double min = 85.0, double max = 100.0, double criticalThreshold = 90.0)
-            : base(source, min, max, criticalThreshold)
+        public BloodOxygenSensor(string source, SensorTypes sensorType = SensorTypes.BloodOxygen, double min = 85.0, double max = 100.0, double criticalThreshold = 90.0)
+            : base(source, sensorType, min, max, criticalThreshold)
         {
         }
 

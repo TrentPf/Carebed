@@ -10,8 +10,8 @@ namespace Carebed.Models.Sensors
     internal sealed class EegSensor : AbstractSensor
     {
 
-        public EegSensor(string source, double min = 0.0, double max = 100.0, double criticalThreshold = 90.0)
-            : base(source, min, max, criticalThreshold)
+        public EegSensor(string source, SensorTypes sensorType = SensorTypes.EEG , double min = 0.0, double max = 100.0, double criticalThreshold = 90.0)
+            : base(source, sensorType, min, max, criticalThreshold)
         {
         }
 
@@ -24,7 +24,7 @@ namespace Carebed.Models.Sensors
             {
                 Value = value,
                 Source = SensorID,
-                SensorType = SensorTypes.EEG,
+                SensorType = this.SensorType,
                 IsCritical = (value < _criticalThreshold),
                 CreatedAt = DateTime.UtcNow,
                 CorrelationId = correlationId,

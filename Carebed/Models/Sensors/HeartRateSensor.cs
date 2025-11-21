@@ -11,8 +11,8 @@ namespace Carebed.Models.Sensors
     {
         private readonly int _lowCritical;
 
-        public HeartRateSensor(string source, int min = 40, int max = 130, int lowCritical = 40, int highCritical = 120)
-            : base(source, min, max, highCritical)
+        public HeartRateSensor(string source, SensorTypes sensorType = SensorTypes.HeartRate, int min = 40, int max = 130, int lowCritical = 40, int highCritical = 120)
+            : base(source, sensorType, min, max, highCritical)
         {
             _lowCritical = lowCritical;
         }
@@ -27,7 +27,7 @@ namespace Carebed.Models.Sensors
             {
                 Value = value,
                 Source = SensorID,
-                SensorType = SensorTypes.HeartRate,
+                SensorType = this.SensorType,
                 IsCritical = (value < _criticalThreshold),
                 CreatedAt = DateTime.UtcNow,
                 CorrelationId = correlationId,

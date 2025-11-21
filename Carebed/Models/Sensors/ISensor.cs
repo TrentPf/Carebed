@@ -1,4 +1,5 @@
 ﻿using System;
+using Carebed.Infrastructure.Enums;
 using Carebed.Infrastructure.Message.SensorMessages;
 
 namespace Carebed.Models.Sensors
@@ -13,6 +14,8 @@ namespace Carebed.Models.Sensors
         /// Logical source/id for the sensor (e.g. "Room A").
         /// </summary>
         string SensorID { get; init; }
+
+        SensorTypes SensorType { get; init; }
 
         /// <summary>
         /// Read a single snapshot of sensor data. This is called by the SensorManager every poll cycle.

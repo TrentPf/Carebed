@@ -7,11 +7,8 @@ using Carebed.Infrastructure.Message.AlertMessages;
 using Carebed.Infrastructure.Message.SensorMessages;
 using Carebed.Infrastructure.MessageEnvelope;
 
-
-
 namespace Carebed.Managers
 {
-
     /// <summary>
     /// Manager responsible for handling alerts from sensors and actuators, tracking active alerts, and sending alert messages to the UI layer.
     /// </summary>
