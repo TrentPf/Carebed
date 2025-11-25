@@ -61,6 +61,8 @@ namespace Carebed.UI
         private Button logsTabButton;
         private Button settingsTabButton;
         private Panel mainViewportPanel;
+        private Label pauseStatusLabel;
+        private Panel pauseStatusIndicator;
 
         // Guard statement to suppress alert selection changed events during programmatic updates
         private bool _suppressAlertSelection = false;
@@ -176,28 +178,38 @@ namespace Carebed.UI
 
         private void InitializeAlertLogPanel()
         {
-            // Container for log and buttons
-            alertLogContainer = new TableLayoutPanel
+            // Create a label for the alert log title
+            var alertLogTitleLabel = new Label
             {
-                Name = "AlertLogContainer",
-                Dock = DockStyle.Bottom,
-                Height = 120,
-                Padding = new Padding(4),
-                BackColor = Color.WhiteSmoke,
-                ColumnCount = 3,
-                RowCount = 1,
+                Text = "Alert Log",
+                Dock = DockStyle.Fill,
+                Font = new Font("Segoe UI", 10, FontStyle.Bold),
+                TextAlign = ContentAlignment.MiddleLeft,
+                Padding = new Padding(4, 0, 0, 4),
+                Height = 24
             };
-            alertLogContainer.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); // Log takes most space
-            alertLogContainer.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 120)); // Button width
-            alertLogContainer.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 120)); // Button width
 
-            // Alert log panel (as before)
-            alertLogPanel.Name = "AlertLogPanel";
-            alertLogPanel.Dock = DockStyle.Fill;
-            alertLogPanel.Padding = new Padding(0);
-            alertLogPanel.BackColor = Color.WhiteSmoke;
+            // Create a TableLayoutPanel to stack the title and the ListView
+            var alertLogContentLayout = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                RowCount = 2,
+                ColumnCount = 1,
+                BackColor = Color.WhiteSmoke,
+            };
+            alertLogContentLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 28)); // Title height
+            alertLogContentLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); // ListView takes the rest
 
-            // Configure alert count label
+            // Create a bordered panel for the ListView
+            var alertListViewBorderPanel = new Panel
+            {
+                Dock = DockStyle.Fill,
+                BorderStyle = BorderStyle.FixedSingle,
+                Margin = new Padding(0),
+                BackColor = Color.White
+            };
+
+            // Configure alert count label (optional, if you want to show it)
             alertCountLabel.Dock = DockStyle.Top;
             alertCountLabel.TextAlign = ContentAlignment.MiddleLeft;
             alertCountLabel.Font = new Font("Segoe UI", 9, FontStyle.Bold);
@@ -206,35 +218,141 @@ namespace Carebed.UI
             alertListView.Dock = DockStyle.Fill;
             alertListView.View = View.Details;
             alertListView.FullRowSelect = true;
+            alertListView.Columns.Clear();
             alertListView.Columns.Add("Count", 80);
             alertListView.Columns.Add("Time", 160);
             alertListView.Columns.Add("Source", 180);
             alertListView.Columns.Add("Alert", 350);
             alertListView.Columns.Add("Severity", 100);
 
-            alertLogPanel.Controls.Add(alertListView);
+            // Add the ListView to the bordered panel
+            alertListViewBorderPanel.Controls.Add(alertListView);
 
-            // Buttons
+            // Add the title label and bordered ListView panel to the layout
+            alertLogContentLayout.Controls.Add(alertLogTitleLabel, 0, 0);
+            alertLogContentLayout.Controls.Add(alertListViewBorderPanel, 0, 1);
+
+            // Alert log panel setup
+            alertLogPanel.Name = "AlertLogPanel";
+            alertLogPanel.Dock = DockStyle.Fill;
+            alertLogPanel.Padding = new Padding(0);
+            alertLogPanel.BackColor = Color.WhiteSmoke;
+            alertLogPanel.Controls.Clear();
+            alertLogPanel.Controls.Add(alertLogContentLayout);
+
+            // Pause and Clear buttons
             clearAlertsButton = new Button
             {
-                Text = "Clear Alerts",
-                Dock = DockStyle.Fill,
-                Margin = new Padding(4)
+                Text = "Clear",
+                BackColor = Color.LightGray,
+                FlatStyle = FlatStyle.Flat,
+                Size = new Size(72, 48),
+                Margin = new Padding(8)
             };
+            clearAlertsButton.FlatAppearance.BorderSize = 0;
             clearAlertsButton.Click += ClearAlertsButton_Click;
 
             pauseAlertsButton = new Button
             {
-                Text = "Pause Alerts",
-                Dock = DockStyle.Fill,
-                Margin = new Padding(4)
+                Text = "Pause",
+                BackColor = Color.LightGray,
+                FlatStyle = FlatStyle.Flat,
+                Size = new Size(72, 48),
+                Margin = new Padding(8)
             };
-            pauseAlertsButton.Click += PauseAlertsButton_Click;
+            pauseAlertsButton.FlatAppearance.BorderSize = 0;
+            pauseAlertsButton.Click += (s, e) =>
+            {
+                PauseAlertsButton_Click(s, e);
+                UpdatePauseStatusIndicator();
+            };
 
-            // Add to container
+            // Status label for clear button
+            var clearStatusLabel = new Label
+            {
+                Text = "Clear Alerts",
+                AutoSize = true,
+                TextAlign = ContentAlignment.MiddleLeft,
+                Font = new Font("Segoe UI", 9, FontStyle.Regular),
+                Margin = new Padding(0, 0, 8, 0)
+            };
+
+            // Status label and indicator for pause button
+            pauseStatusLabel = new Label
+            {
+                Text = "Alerts On",
+                AutoSize = true,
+                TextAlign = ContentAlignment.MiddleLeft,
+                Font = new Font("Segoe UI", 9, FontStyle.Bold),
+                Margin = new Padding(0, 0, 8, 0)
+            };
+            pauseStatusIndicator = new Panel
+            {
+                Size = new Size(16, 16),
+                BackColor = Color.Green,
+                Margin = new Padding(0, 0, 8, 0)
+            };
+
+            // Row for clear button and label
+            var clearRowPanel = new FlowLayoutPanel
+            {
+                FlowDirection = FlowDirection.LeftToRight,
+                AutoSize = true,
+                WrapContents = false,
+                Margin = new Padding(0, 0, 0, 8)
+            };
+            clearAlertsButton.Anchor = AnchorStyles.Left;
+            clearStatusLabel.Anchor = AnchorStyles.Left;
+            clearStatusLabel.TextAlign = ContentAlignment.MiddleLeft;
+            clearRowPanel.Controls.Add(clearAlertsButton);
+            clearRowPanel.Controls.Add(clearStatusLabel);
+
+            // Row for pause button, label, and indicator
+            var pauseRowPanel = new FlowLayoutPanel
+            {
+                FlowDirection = FlowDirection.LeftToRight,
+                AutoSize = true,
+                WrapContents = false,
+                Margin = new Padding(0)
+            };
+            pauseAlertsButton.Anchor = AnchorStyles.Left;
+            pauseStatusLabel.Anchor = AnchorStyles.Left;
+            pauseStatusLabel.TextAlign = ContentAlignment.MiddleLeft;
+            pauseStatusIndicator.Anchor = AnchorStyles.Left;
+            pauseRowPanel.Controls.Add(pauseAlertsButton);
+            pauseRowPanel.Controls.Add(pauseStatusLabel);
+            pauseRowPanel.Controls.Add(pauseStatusIndicator);
+
+            // Main button panel (vertical stack)
+            var buttonPanel = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Right,
+                FlowDirection = FlowDirection.TopDown,
+                AutoSize = true,
+                Padding = new Padding(16, 16, 16, 16),
+                WrapContents = false
+            };
+            buttonPanel.Controls.Add(clearRowPanel);
+            buttonPanel.Controls.Add(pauseRowPanel);
+
+            // Alert log panel setup (add buttonPanel to the right)
+            alertLogPanel.Controls.Clear();
+            alertLogPanel.Controls.Add(alertLogContentLayout);
+            alertLogPanel.Controls.Add(buttonPanel);
+
+            // Container for log and buttons
+            alertLogContainer = new TableLayoutPanel
+            {
+                Name = "AlertLogContainer",
+                Dock = DockStyle.Bottom,
+                Height = 220,
+                Padding = new Padding(4),
+                BackColor = Color.WhiteSmoke,
+                ColumnCount = 1,
+                RowCount = 1,
+            };
+            alertLogContainer.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
             alertLogContainer.Controls.Add(alertLogPanel, 0, 0);
-            alertLogContainer.Controls.Add(clearAlertsButton, 1, 0);
-            alertLogContainer.Controls.Add(pauseAlertsButton, 2, 0);
 
             // Add container to form
             this.Controls.Add(alertLogContainer);
@@ -361,7 +479,13 @@ namespace Carebed.UI
                 if (_alertHandlerActuatorTelemetry != null) _eventBus.Unsubscribe(_alertHandlerActuatorTelemetry);
                 if (_alertHandlerActuatorStatus != null) _eventBus.Unsubscribe(_alertHandlerActuatorStatus);
                 if (_alertHandlerActuatorError != null) _eventBus.Unsubscribe(_alertHandlerActuatorError);
-                pauseAlertsButton.Text = "Resume Alerts";
+                RunOnUiThread(() =>
+                {
+                    pauseAlertsButton.Text = "Resume Alerts";
+                    pauseAlertsButton.BackColor = Color.Red; // Not-active
+                    UpdatePauseStatusIndicator();
+                });
+                
             }
             else
             {
@@ -372,7 +496,12 @@ namespace Carebed.UI
                 if (_alertHandlerActuatorTelemetry != null) _eventBus.Subscribe(_alertHandlerActuatorTelemetry);
                 if (_alertHandlerActuatorStatus != null) _eventBus.Subscribe(_alertHandlerActuatorStatus);
                 if (_alertHandlerActuatorError != null) _eventBus.Subscribe(_alertHandlerActuatorError);
-                pauseAlertsButton.Text = "Pause Alerts";
+                RunOnUiThread(() =>
+                {
+                    pauseAlertsButton.Text = "Pause Alerts";
+                    pauseAlertsButton.BackColor = Color.Green; // Active
+                    UpdatePauseStatusIndicator();
+                });
             }
         }
 
@@ -560,6 +689,21 @@ namespace Carebed.UI
         }
 
         #endregion
+
+        // Call this after toggling alertsPaused
+        private void UpdatePauseStatusIndicator()
+        {
+            if (alertsPaused)
+            {
+                pauseStatusLabel.Text = "Alerts Off";
+                pauseStatusIndicator.BackColor = Color.Red;
+            }
+            else
+            {
+                pauseStatusLabel.Text = "Alerts On";
+                pauseStatusIndicator.BackColor = Color.Green;
+            }
+        }
 
         private DialogResult ShowAlertPopup(string details, MessageBoxButtons buttons, MessageBoxIcon icon)
         {
@@ -833,5 +977,60 @@ namespace Carebed.UI
         //}
 
         
+    }
+
+    public class CircularButton : Control
+    {
+        public Color NormalColor { get; set; } = Color.LightGray;
+        public Color HoverColor { get; set; } = Color.DodgerBlue;
+        public Color PressedColor { get; set; } = Color.DeepSkyBlue;
+        public Color ToggledColor { get; set; } = Color.OrangeRed;
+        public bool IsToggled { get; set; } = false;
+        public string ToolTipText { get; set; } = string.Empty;
+
+        private bool _hovered = false;
+        private bool _pressed = false;
+
+        public CircularButton()
+        {
+            SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw | ControlStyles.Selectable, true);
+            Size = new Size(48, 48);
+            Cursor = Cursors.Hand;
+            TabStop = true;
+        }
+
+        protected override void OnPaint(PaintEventArgs pevent)
+        {
+            Color fill = NormalColor;
+            if (IsToggled)
+                fill = ToggledColor;
+            else if (_pressed)
+                fill = PressedColor;
+            else if (_hovered)
+                fill = HoverColor;
+
+            using (var g = pevent.Graphics)
+            using (var brush = new SolidBrush(fill))
+            using (var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center })
+            {
+                g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                g.FillEllipse(brush, 0, 0, Width - 1, Height - 1);
+                using (var pen = new Pen(Color.Gray, 2))
+                    g.DrawEllipse(pen, 0, 0, Width - 1, Height - 1);
+                g.DrawString(Text, Font, Brushes.White, ClientRectangle, sf);
+            }
+        }
+
+        protected override void OnMouseEnter(EventArgs e) { _hovered = true; Invalidate(); base.OnMouseEnter(e); }
+        protected override void OnMouseLeave(EventArgs e) { _hovered = false; Invalidate(); base.OnMouseLeave(e); }
+        protected override void OnMouseDown(MouseEventArgs mevent) { _pressed = true; Invalidate(); base.OnMouseDown(mevent); }
+        protected override void OnMouseUp(MouseEventArgs mevent) { _pressed = false; Invalidate(); base.OnMouseUp(mevent); }
+        protected override void OnResize(EventArgs e) { base.OnResize(e); Width = Height; Invalidate(); }
+
+        // Optional: Raise a Click event
+        protected override void OnClick(EventArgs e)
+        {
+            base.OnClick(e);
+        }
     }
 }
