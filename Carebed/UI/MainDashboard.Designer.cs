@@ -68,6 +68,8 @@ namespace Carebed.UI
         private Label alertBannerTimeValue;
         private Label alertBannerSourceValue;
         private Label alertBannerValueValue;
+        private Label alertBannerSeverityTitle;
+        private Label alertBannerSeverityValue;
 
         private TableLayoutPanel alertLogContainer;
         private Button clearAlertsButton;
@@ -90,14 +92,9 @@ namespace Carebed.UI
         private Label pauseStatusLabel;
         private Label alertLabel = new Label();
         private Label alertCountLabel = new Label();
-        private Label alertBannerLabel = new Label();
-
-        // UI Control elements for alert banner
-        
+        private Label alertBannerLabel = new Label();      
         
         private PictureBox alertIcon = new PictureBox();
-        
-        
 
         private ListView alertListView = new ListView();
         
@@ -148,16 +145,17 @@ namespace Carebed.UI
             // Create the table for the banner
             alertBannerTable = new TableLayoutPanel
             {
-                ColumnCount = 3,
+                ColumnCount = 4,
                 RowCount = 2,
                 Dock = DockStyle.Fill,
                 BackColor = Color.Transparent,
                 CellBorderStyle = TableLayoutPanelCellBorderStyle.None,
                 Padding = new Padding(8, 0, 8, 0)
             };
-            alertBannerTable.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25));
-            alertBannerTable.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 35));
-            alertBannerTable.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 40));
+            alertBannerTable.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 20));
+            alertBannerTable.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 30));
+            alertBannerTable.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 30));
+            alertBannerTable.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 20));
             alertBannerTable.RowStyles.Add(new RowStyle(SizeType.Absolute, 18));
             alertBannerTable.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
@@ -181,6 +179,14 @@ namespace Carebed.UI
             alertBannerValueTitle = new Label
             {
                 Text = "Value",
+                Font = new Font("Segoe UI", 9, FontStyle.Bold),
+                TextAlign = ContentAlignment.MiddleLeft,
+                Dock = DockStyle.Fill,
+                ForeColor = Color.LightGray
+            };
+            alertBannerSeverityTitle = new Label
+            {
+                Text = "Severity",
                 Font = new Font("Segoe UI", 9, FontStyle.Bold),
                 TextAlign = ContentAlignment.MiddleLeft,
                 Dock = DockStyle.Fill,
@@ -212,14 +218,24 @@ namespace Carebed.UI
                 Dock = DockStyle.Fill,
                 ForeColor = Color.White
             };
+            alertBannerSeverityValue = new Label
+            {
+                Text = "",
+                Font = new Font("Segoe UI", 11, FontStyle.Bold),
+                TextAlign = ContentAlignment.MiddleLeft,
+                Dock = DockStyle.Fill,
+                ForeColor = Color.White
+            };
 
             // Add to table
             alertBannerTable.Controls.Add(alertBannerTimeTitle, 0, 0);
             alertBannerTable.Controls.Add(alertBannerSourceTitle, 1, 0);
             alertBannerTable.Controls.Add(alertBannerValueTitle, 2, 0);
+            alertBannerTable.Controls.Add(alertBannerSeverityTitle, 3, 0);
             alertBannerTable.Controls.Add(alertBannerTimeValue, 0, 1);
             alertBannerTable.Controls.Add(alertBannerSourceValue, 1, 1);
             alertBannerTable.Controls.Add(alertBannerValueValue, 2, 1);
+            alertBannerTable.Controls.Add(alertBannerSeverityValue, 3, 1);
 
             // Setup alert banner panel
             alertBanner.Name = "AlertBanner";
@@ -577,7 +593,7 @@ namespace Carebed.UI
                 RunOnUiThread(() =>
                 {
                     pauseAlertsButton.Text = "Resume Alerts";
-                    pauseAlertsButton.BackColor = Color.Red; // Not-active
+                    //pauseAlertsButton.BackColor = Color.Red; // Not-active
                     UpdatePauseStatusIndicator();
                 });
                 
@@ -594,7 +610,7 @@ namespace Carebed.UI
                 RunOnUiThread(() =>
                 {
                     pauseAlertsButton.Text = "Pause Alerts";
-                    pauseAlertsButton.BackColor = Color.Green; // Active
+                    //pauseAlertsButton.BackColor = Color.Green; // Active
                     UpdatePauseStatusIndicator();
                 });
             }
@@ -703,18 +719,20 @@ namespace Carebed.UI
                 if (string.IsNullOrWhiteSpace(alert.AlertText) || alert.AlertText == "No active alerts")
                 {
                     alertBanner.BackColor = NoAlertsActiveColour;
+                    alertBannerSeverityValue.Text = "";
                 }
                 else if (alert.IsCritical)
                 {
                     alertBanner.BackColor = SevereAlertColour;
+                    alertBannerSeverityValue.Text = "Critical";
                 }
                 else
                 {
                     alertBanner.BackColor = ActiveAlertsColour;
+                    alertBannerSeverityValue.Text = "Normal";
                 }
             }
 
-            // Set values for the columns
             string displayTime = time ?? alert.Time ?? DateTime.Now.ToString("MMM. dd HH:mm:ss");
             alertBannerTimeValue.Text = displayTime;
             alertBannerSourceValue.Text = alert.Source ?? "";
