@@ -19,7 +19,8 @@ namespace Carebed.Infrastructure
                 new TemperatureSensor("temp_sensor"),
                 new BloodOxygenSensor("blood_o2_sensor"),
                 new EegSensor("eeg_sensor"),
-                new HeartRateSensor("heart_rate_sensor")
+                new HeartRateSensor("heart_rate_sensor"),
+                new PaitentUpSensor("Paitent_up_sensor")
                 // ... add more sensors as needed
             };
 
