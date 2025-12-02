@@ -8,5 +8,7 @@ namespace Carebed.Infrastructure.Message.AlertMessages
     public class AlertClearMessage<TPayload> : AlertBaseMessage<TPayload> where TPayload : IEventMessage
     {
         public int alertNumber { get; set; }
+
+        public bool clearAllMessages { get; set; }
     }
 }

@@ -5,6 +5,7 @@ namespace Carebed.Infrastructure.Enums
     {
         Start,
         Stop,
-        AdjustFilePath
+        AdjustLogFilePath,
+        GetLogFilePath
     }
 }

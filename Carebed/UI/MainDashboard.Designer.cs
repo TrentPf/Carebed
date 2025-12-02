@@ -11,6 +11,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Windows.Forms;
 using Carebed.Infrastructure.Message.UI;
+using Carebed.Infrastructure.Message;
+using Carebed.Infrastructure.Message.LoggerMessages;
 
 namespace Carebed.UI
 {
@@ -45,6 +47,19 @@ namespace Carebed.UI
         private Action<MessageEnvelope<AlertActionMessage<ActuatorStatusMessage>>>? _alertHandlerActuatorStatus;
         private Action<MessageEnvelope<AlertActionMessage<ActuatorErrorMessage>>>? _alertHandlerActuatorError;
 
+        // Sensor grid for displaying telemetry data
+        private DataGridView sensorGridView;
+        private Dictionary<string, DataGridViewRow> sensorRows = new();
+
+        // Alert Clear Ack handler
+        private Action<MessageEnvelope<AlertClearAckMessage>>? _alertClearAckHandler;
+
+
+        // Logger Command Ack handler
+        private Action<MessageEnvelope<LoggerCommandAckMessage>>? _loggerCommandAckHandler;
+
+        // Sensor Command Ack handler
+        private Action<MessageEnvelope<SensorCommandAckMessage>>? _sensorCommandAckHandler;
         #endregion
 
         #region Windows Forms Elements
@@ -104,6 +119,16 @@ namespace Carebed.UI
         private Button clearAlertsButton;
         private Button pauseAlertsButton;
 
+        private Button SensorOnOFFbutton;
+
+        #region Logs Viewer Section
+        private RichTextBox logRichTextBox;
+        private System.Windows.Forms.Timer logFileTimer;
+        private string? logFilePath;
+        private long lastLogFileLength = 0;
+        private bool logFileErrorShown = false;
+        #endregion
+
         #endregion
 
         #endregion
@@ -113,7 +138,7 @@ namespace Carebed.UI
         /// <summary>
         /// Constructor for MainDashboard that accepts an IEventBus instance.
         /// </summary>
-        internal MainDashboard(IEventBus eventBus)
+        public MainDashboard(IEventBus eventBus)
         {
             _eventBus = eventBus ?? throw new ArgumentNullException(nameof(eventBus));
 
@@ -121,7 +146,9 @@ namespace Carebed.UI
             InitializeAlertBanner();            
             InitializeTabsPanel();
             InitializeMainViewportPanel();
+            InitializeSensorGrid();
             InitializeAlertLogPanel();
+            InitializeLogViewer();
 
             // Subscribe to single-click selection
             alertListView.MouseUp += AlertListView_MouseUp;
@@ -495,6 +522,24 @@ namespace Carebed.UI
             this.Controls.Add(mainViewportPanel);
         }
 
+        private void InitializeLogViewer()
+        {
+            logRichTextBox = new RichTextBox
+            {
+                Dock = DockStyle.Fill,
+                ReadOnly = true,
+                WordWrap = false,
+                Font = new Font("Consolas", 10),
+                BackColor = Color.Black,
+                ForeColor = Color.LightGreen,
+                ScrollBars = RichTextBoxScrollBars.Vertical
+            };
+
+            logFileTimer = new System.Windows.Forms.Timer();
+            logFileTimer.Interval = 1000; // 5000 milliseconds            
+            logFileTimer.Tick += LogFileTimer_Tick;
+        }
+
         /// <summary>
         /// A override for the OnLoad event to perform additional initialization.
         /// </summary>
@@ -510,6 +555,7 @@ namespace Carebed.UI
                 AlertText = "",
                 IsCritical = false
             };
+            
             // Setup data binding for alert banner
             alertBindingSource.DataSource = alertViewModel;
             alertLabel.DataBindings.Add("Text", alertBindingSource, "AlertText");
@@ -524,6 +570,15 @@ namespace Carebed.UI
             _alertHandlerActuatorStatus = HandleAlertActionForActuator<ActuatorStatusMessage>;
             _alertHandlerActuatorError = HandleAlertActionForActuator<ActuatorErrorMessage>;
 
+            // Register alert clear ack event handler
+            _alertClearAckHandler = OnAlertClearAck;
+
+            // Register logger command ack handler
+            _loggerCommandAckHandler = OnLoggerCommandAck;
+
+            // Register sensor command ack handler
+            _sensorCommandAckHandler = OnSensorCommandAck;
+
             // Register sensor handlers with event bus
             _eventBus.Subscribe(_alertHandlerSensorTelemetry);
             _eventBus.Subscribe(_alertHandlerSensorStatus);
@@ -534,6 +589,15 @@ namespace Carebed.UI
             _eventBus.Subscribe(_alertHandlerActuatorStatus);
             _eventBus.Subscribe(_alertHandlerActuatorError);
 
+            // Subscribe to sensor telemetry for the grid
+            _eventBus.Subscribe<SensorTelemetryMessage>(HandleSensorTelemetry);
+
+            // Register alert clear ack handler with event bus
+            _eventBus.Subscribe(_alertClearAckHandler);
+
+            // Register the logger ack message handler with event bus
+            _eventBus.Subscribe(_loggerCommandAckHandler);
+
             // Attach tab button click handlers
             vitalsTabButton.Click += VitalsTabButton_Click;
             actuatorsTabButton.Click += ActuatorsTabButton_Click;
@@ -541,9 +605,78 @@ namespace Carebed.UI
             settingsTabButton.Click += SettingsTabButton_Click;
         }
 
+
+
         #endregion
 
         #region Event Handlers
+
+
+
+        private void OnSensorCommandAck(MessageEnvelope<SensorCommandAckMessage> envelope)
+        {
+            throw new NotImplementedException();
+        }
+
+        private void OnLoggerCommandAck(MessageEnvelope<LoggerCommandAckMessage> envelope)
+        {
+            // Use switch statement to handle the different command types
+            switch (envelope.Payload.CommandType)
+            {
+                case LoggerCommands.Start:
+                    if (envelope.Payload.IsAcknowledged)
+                    {
+                        // Update UI to reflect that logging has started
+                        RunOnUiThread(() =>
+                        {
+                            // Example: Change a label or button state
+                            // loggingStatusLabel.Text = "Logging Started";
+                        });
+                    }
+                    break;
+                case LoggerCommands.Stop:
+                    if (envelope.Payload.IsAcknowledged)
+                    {
+                        // Update UI to reflect that logging has stopped
+                        RunOnUiThread(() =>
+                        {
+                            // Example: Change a label or button state
+                            // loggingStatusLabel.Text = "Logging Stopped";
+                        });
+                    }
+                    break;
+                case LoggerCommands.AdjustLogFilePath:
+                    if (envelope.Payload.IsAcknowledged)
+                    {
+                        // Update UI to reflect new log file path
+                        RunOnUiThread(() =>
+                        {
+                            // Example: Update a label with the new file path
+                            // logFilePathLabel.Text = "New Log File Path Set";
+                        });
+                    }
+                    break;
+                case LoggerCommands.GetLogFilePath:
+                    if (envelope.Payload.IsAcknowledged)
+                    {
+                        // Update UI to display the current log file path
+                        RunOnUiThread(() =>
+                        {
+                            logFilePath = envelope.Payload.Metadata?["FilePath"];
+                            LoadLogFile(); // Custom method to load and display t
+                            logFileTimer.Start();
+                            //logRichTextBox.Text = $"Log File Path: {envelope.Payload.Metadata["FilePath"]}";
+
+                        });
+                    }
+                    break;
+                default:
+                    // Handle unknown command types if necessary
+                    break;
+            }
+
+            RunOnUiThread(() => logRichTextBox.Text = "OnLoggerCommandAck called");
+        }
 
         /// <summary>
         /// Handler for when the user clicks the AlertBanner.
@@ -583,6 +716,18 @@ namespace Carebed.UI
             }
         }
 
+        private void OnAlertClearAck(MessageEnvelope<AlertClearAckMessage> envelope)
+        {
+            // Only clear if ack is for all alerts and was successful
+            if (envelope.Payload != null && envelope.Payload.Source == "ALL" && envelope.Payload.alertCleared)
+            {
+                RunOnUiThread(() => {
+                    alertListView.Items.Clear();
+                    ShowAlert(new AlertViewModel { AlertText = "No active alerts", IsCritical = false, Source = "" });
+                });
+            }
+        }
+
         /// <summary>
         /// Handles the click event for the "Clear Alerts" button.
         /// </summary>
@@ -592,9 +737,17 @@ namespace Carebed.UI
         /// <param name="e">An <see cref="EventArgs"/> instance containing the event data.</param>
         private void ClearAlertsButton_Click(object? sender, EventArgs e)
         {
-            alertListView.Items.Clear();
-            UpdateAlertCount();
-            ShowAlert(new AlertViewModel { AlertText = "No active alerts", IsCritical = false, Source = "" });
+            // Publish AlertClearMessage with clearAllMessages = true
+            var clearMsg = new AlertClearMessage<IEventMessage>
+            {
+                clearAllMessages = true
+            };
+            var envelope = new MessageEnvelope<AlertClearMessage<IEventMessage>>(
+                clearMsg,
+                MessageOrigins.AlertManager,
+                MessageTypes.AlertClear
+            );
+            _ = _eventBus.PublishAsync(envelope);
         }
 
         /// <summary>
@@ -647,6 +800,8 @@ namespace Carebed.UI
         /// <param name="e"></param>
         private void VitalsTabButton_Click(object? sender, EventArgs e)
         {
+            logFileTimer.Stop(); // Stop log updates
+            ShowSensorGrid();
             mainViewportPanel.BackColor = Color.LightSkyBlue; // Example color for Vitals
         }
 
@@ -657,6 +812,8 @@ namespace Carebed.UI
         /// <param name="e"></param>
         private void ActuatorsTabButton_Click(object? sender, EventArgs e)
         {
+            logFileTimer.Stop();
+            HideSensorGrid();
             mainViewportPanel.BackColor = Color.LightGreen; // Example color for Actuators
         }
 
@@ -667,7 +824,24 @@ namespace Carebed.UI
         /// <param name="e"></param>
         private void LogsTabButton_Click(object? sender, EventArgs e)
         {
-            mainViewportPanel.BackColor = Color.LightYellow; // Example color for Logs
+            HideSensorGrid();
+            RunOnUiThread(() =>
+            {
+                mainViewportPanel.Controls.Clear();
+                mainViewportPanel.Controls.Add(logRichTextBox);
+                logRichTextBox.Text = "Loading log file...";
+            });
+           
+            //logRichTextBox.Text = "Log viewer loaded"; // Debug: Should se
+
+            if (string.IsNullOrEmpty(logFilePath))
+            {
+                RequestLogFilePath();
+            }
+            else
+            {
+                logFileTimer.Start();
+            }
         }
 
         /// <summary>
@@ -677,6 +851,8 @@ namespace Carebed.UI
         /// <param name="e"></param>
         private void SettingsTabButton_Click(object? sender, EventArgs e)
         {
+            logFileTimer.Stop();
+            HideSensorGrid();
             mainViewportPanel.BackColor = Color.LightCoral; // Example color for Settings
         }
 
@@ -706,8 +882,8 @@ namespace Carebed.UI
             {
                 ShowAlert(avm);
 
-                //// Generate alert entry for log
-                string alertCount = (alertListView.Items.Count + 1).ToString();
+                // Use alertNumber from the message for the count
+                string alertCount = msg.alertNumber.ToString();
                 string source = msg.Payload?.SensorID ?? "Unknown";
                 string alertText = msg.AlertText;
                 string severity = msg.Payload?.IsCritical == true ? "Critical" : "Normal";
@@ -723,7 +899,7 @@ namespace Carebed.UI
 
                 // Insert at the top
                 alertListView.Items.Insert(0, item);
-                UpdateAlertCount();
+                //UpdateAlertCount();
             });
            
         }
@@ -783,7 +959,132 @@ namespace Carebed.UI
             alertBannerValueValue.Text = alert.AlertText ?? "";
         }
 
+        /// <summary>
+        /// Initialize the sensor grid in the main viewport panel.
+        /// </summary>
+        private void InitializeSensorGrid()
+        {
+            sensorGridView = new DataGridView
+            {
+                Dock = DockStyle.Fill,
+                ReadOnly = true,
+                AllowUserToAddRows = false,
+                AllowUserToDeleteRows = false,
+                AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
+                ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.AutoSize,
+                BackgroundColor = Color.White
+            };
+            sensorGridView.Columns.Add("SensorID", "Sensor ID");
+            sensorGridView.Columns.Add("Type", "Type");
+            sensorGridView.Columns.Add("Value", "Value");
+            sensorGridView.Columns.Add("IsCritical", "Critical");
+            sensorGridView.Columns.Add("Timestamp", "Timestamp");
+        }
+
+        private void ShowSensorGrid()
+        {
+            mainViewportPanel.Controls.Clear();
+            mainViewportPanel.Controls.Add(sensorGridView);
+        }
+
+        private void HideSensorGrid()
+        {
+            if (mainViewportPanel.Controls.Contains(sensorGridView))
+                mainViewportPanel.Controls.Remove(sensorGridView);
+        }
+
+        /// <summary>
+        /// Handles the reception of sensor telemetry data - updates the sensor grid.
+        /// </summary>
+        private void HandleSensorTelemetry(MessageEnvelope<SensorTelemetryMessage> envelope)
+        {
+            var msg = envelope.Payload;
+            if (msg?.Data == null) return;
+            RunOnUiThread(() =>
+            {
+                if (!sensorRows.TryGetValue(msg.SensorID, out var row))
+                {
+                    row = new DataGridViewRow();
+                    row.CreateCells(sensorGridView,
+                        msg.SensorID,
+                        msg.TypeOfSensor.ToString(),
+                        msg.Data.Value.ToString("F2"),
+                        msg.Data.IsCritical ? "Yes" : "No",
+                        msg.Data.CreatedAt.ToString("HH:mm:ss")
+                    );
+                    sensorGridView.Rows.Add(row);
+                    sensorRows[msg.SensorID] = row;
+                }
+                else
+                {
+                    row.SetValues(
+                        msg.SensorID,
+                        msg.TypeOfSensor.ToString(),
+                        msg.Data.Value.ToString("F2"),
+                        msg.Data.IsCritical ? "Yes" : "No",
+                        msg.Data.CreatedAt.ToString("HH:mm:ss")
+                    );
+                }
+            });
+        }
+
         #endregion
+
+        #region Methods
+        private void LoadLogFile()
+        {
+            if (!string.IsNullOrEmpty(logFilePath) && File.Exists(logFilePath))
+            {
+                using (var stream = new FileStream(logFilePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                using (var reader = new StreamReader(stream))
+                {
+                    logRichTextBox.Text = reader.ReadToEnd();
+                }
+                lastLogFileLength = new FileInfo(logFilePath).Length;
+            }
+        }
+
+        private void LogFileTimer_Tick(object? sender, EventArgs e)
+        {
+            if (string.IsNullOrEmpty(logFilePath) || !File.Exists(logFilePath))
+                return;
+
+            var fileInfo = new FileInfo(logFilePath);
+            if (fileInfo.Length == lastLogFileLength)
+                return; // No new content
+
+            int oldSelectionStart = logRichTextBox.SelectionStart;
+            bool wasAtEnd = (oldSelectionStart == logRichTextBox.TextLength);
+
+            using (var stream = new FileStream(logFilePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+            using (var reader = new StreamReader(stream))
+            {
+                logRichTextBox.Text = reader.ReadToEnd();
+            }
+            lastLogFileLength = fileInfo.Length;
+
+            if (wasAtEnd)
+            {
+                logRichTextBox.SelectionStart = logRichTextBox.TextLength;
+                logRichTextBox.ScrollToCaret();
+            }
+            else
+            {
+                logRichTextBox.SelectionStart = oldSelectionStart;
+                logRichTextBox.ScrollToCaret();
+            }
+        }
+
+        /// <summary>
+        /// Requests the log file path via an eventBus message.
+        /// </summary>
+        private void RequestLogFilePath()
+        {
+            var request = new LoggerCommandMessage(LoggerCommands.GetLogFilePath);
+            var envelope = new MessageEnvelope<LoggerCommandMessage>(request, MessageOrigins.DisplayManager);
+            _ = _eventBus.PublishAsync(envelope);
+            Console.WriteLine("Firing off the request for GetfilePath");
+        }
 
         /// <summary>
         /// Update the pause status indicator based on the current alert pause state.
@@ -853,8 +1154,29 @@ namespace Carebed.UI
         /// <param name="item"></param>
         private void RemoveAlertListViewItemAndUpdate(ListViewItem item)
         {
+            // Extract alert details before removing
+            string alertNumberStr = item.SubItems[0].Text;
+            string source = item.SubItems[2].Text;
+            string alertText = item.SubItems[3].Text;
+            int alertNumber = 0;
+            int.TryParse(alertNumberStr, out alertNumber);
+
             alertListView.Items.Remove(item);
-            UpdateAlertCount();
+            //UpdateAlertCount();
+
+            // Publish AlertClearMessage on the EventBus
+            var clearMsg = new AlertClearMessage<IEventMessage>
+            {
+                Source = source,
+                alertNumber = alertNumber,
+                // Payload can be null or you can try to store the original payload if needed
+            };
+            var clearEnvelope = new MessageEnvelope<AlertClearMessage<IEventMessage>>(
+                clearMsg,
+                MessageOrigins.AlertManager,
+                MessageTypes.AlertClear
+            );
+            _ = _eventBus.PublishAsync(clearEnvelope);
 
             if (alertListView.Items.Count == 0)
             {
@@ -874,14 +1196,6 @@ namespace Carebed.UI
                     nextItem.SubItems[1].Text // Time
                 );
             }
-        }
-
-        /// <summary>
-        /// Updates the alert count label based on the number of items in the alert list view.
-        /// </summary>
-        private void UpdateAlertCount()
-        {
-            alertCountLabel.Text = $"{alertListView.Items.Count}";
         }
 
         /// <summary>
@@ -924,6 +1238,8 @@ namespace Carebed.UI
             if (_alertHandlerActuatorStatus != null) _eventBus.Unsubscribe(_alertHandlerActuatorStatus);
             if (_alertHandlerActuatorError != null) _eventBus.Unsubscribe(_alertHandlerActuatorError);
 
+            if (_alertClearAckHandler != null) _eventBus.Unsubscribe(_alertClearAckHandler);
+
             base.OnFormClosed(e);
         }
 
@@ -958,61 +1274,8 @@ namespace Carebed.UI
 
         #endregion
 
-        
+        #endregion
     }
 
-    public class CircularButton : Control
-    {
-        public Color NormalColor { get; set; } = Color.LightGray;
-        public Color HoverColor { get; set; } = Color.DodgerBlue;
-        public Color PressedColor { get; set; } = Color.DeepSkyBlue;
-        public Color ToggledColor { get; set; } = Color.OrangeRed;
-        public bool IsToggled { get; set; } = false;
-        public string ToolTipText { get; set; } = string.Empty;
 
-        private bool _hovered = false;
-        private bool _pressed = false;
-
-        public CircularButton()
-        {
-            SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw | ControlStyles.Selectable, true);
-            Size = new Size(48, 48);
-            Cursor = Cursors.Hand;
-            TabStop = true;
-        }
-
-        protected override void OnPaint(PaintEventArgs pevent)
-        {
-            Color fill = NormalColor;
-            if (IsToggled)
-                fill = ToggledColor;
-            else if (_pressed)
-                fill = PressedColor;
-            else if (_hovered)
-                fill = HoverColor;
-
-            using (var g = pevent.Graphics)
-            using (var brush = new SolidBrush(fill))
-            using (var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center })
-            {
-                g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-                g.FillEllipse(brush, 0, 0, Width - 1, Height - 1);
-                using (var pen = new Pen(Color.Gray, 2))
-                    g.DrawEllipse(pen, 0, 0, Width - 1, Height - 1);
-                g.DrawString(Text, Font, Brushes.White, ClientRectangle, sf);
-            }
-        }
-
-        protected override void OnMouseEnter(EventArgs e) { _hovered = true; Invalidate(); base.OnMouseEnter(e); }
-        protected override void OnMouseLeave(EventArgs e) { _hovered = false; Invalidate(); base.OnMouseLeave(e); }
-        protected override void OnMouseDown(MouseEventArgs mevent) { _pressed = true; Invalidate(); base.OnMouseDown(mevent); }
-        protected override void OnMouseUp(MouseEventArgs mevent) { _pressed = false; Invalidate(); base.OnMouseUp(mevent); }
-        protected override void OnResize(EventArgs e) { base.OnResize(e); Width = Height; Invalidate(); }
-
-        // Optional: Raise a Click event
-        protected override void OnClick(EventArgs e)
-        {
-            base.OnClick(e);
-        }
-    }
 }

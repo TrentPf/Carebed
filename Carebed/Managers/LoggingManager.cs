@@ -13,7 +13,9 @@ namespace Carebed.Managers
 
         // Log directory and file path
         private string _logDir = "";
-        private string _filePath = "";
+        private string _logFileName = "";
+
+        private bool _isSubscribed = false;
 
         private bool _isLoggerStarted = false;
 
@@ -26,19 +28,18 @@ namespace Carebed.Managers
         // Handler for global messages
         private readonly Action<IMessageEnvelope> _logMessageHandler;
 
-        // Handler for log commands - uses Func to support async operations
-        private readonly Func<MessageEnvelope<LoggerCommandMessage>, Task> _logCommandHandler;
-        
+        private readonly Action<MessageEnvelope<LoggerCommandMessage>> _logCommandHandler;
+
         #endregion
 
         #region Constructor(s)
-        public LoggingManager(string logDir, string filePath, IFileLoggingService loggingService, IEventBus eventBus)
+        public LoggingManager(string logDir, string logFileName, IFileLoggingService loggingService, IEventBus eventBus)
         {
             try
             {                
                 _loggingService = loggingService;
                 _eventBus = eventBus;
-                UpdateLogLocation(logDir, filePath);
+                UpdateLogLocation(logDir, logFileName);
             }
             catch (Exception ex)
             {
@@ -48,8 +49,8 @@ namespace Carebed.Managers
             // Register the log message handler
             _logMessageHandler = HandleLogMessage;
 
-            // Register the log command handler
-            _logCommandHandler = HandleLogCommand;
+            // Register the log command handler (wrap the async method for event bus compatibility)
+            _logCommandHandler = envelope => HandleLogCommand(envelope).GetAwaiter().GetResult();
         }
         #endregion
 
@@ -74,6 +75,36 @@ namespace Carebed.Managers
                         await _loggingService.Start();
                         _isLoggerStarted = true;
                         successfullyExecutedCommand = true;
+
+                        var stopManagerResponse = new LoggerCommandAckMessage(
+                        commandType: command,
+                        isAcknowledged: successfullyExecutedCommand,
+                        reason: null
+                        );
+
+                        var stopManagerResponseEnvelope = new MessageEnvelope<LoggerCommandAckMessage>(
+                            stopManagerResponse,
+                            MessageOrigins.LoggingManager,
+                            MessageTypes.LoggerCommandResponse
+                        );
+
+                        await _eventBus.PublishAsync(stopManagerResponseEnvelope);
+                    }
+                    else
+                    {
+                        var startManagerResponse = new LoggerCommandAckMessage(
+                        commandType: command,
+                        isAcknowledged: false,
+                        reason: null
+                        );
+
+                        var startManagerResponseEnvelope = new MessageEnvelope<LoggerCommandAckMessage>(
+                            startManagerResponse,
+                            MessageOrigins.LoggingManager,
+                            MessageTypes.LoggerCommandResponse
+                        );
+
+                        await _eventBus.PublishAsync(startManagerResponseEnvelope);
                     }
                     break;
                 case LoggerCommands.Stop:
@@ -82,30 +113,85 @@ namespace Carebed.Managers
                         await _loggingService.Stop();
                         _isLoggerStarted = false;
                         successfullyExecutedCommand = true;
+
+                        var stopManagerResponse = new LoggerCommandAckMessage(
+                        commandType: command,
+                        isAcknowledged: successfullyExecutedCommand,
+                        reason: null
+                        );
+
+                        var stopManagerResponseEnvelope = new MessageEnvelope<LoggerCommandAckMessage>(
+                            stopManagerResponse,
+                            MessageOrigins.LoggingManager,
+                            MessageTypes.LoggerCommandResponse
+                        );
+
+                        await _eventBus.PublishAsync(stopManagerResponseEnvelope);
+
                     }
+                    else
+                    {
+                       var stopManagerResponse = new LoggerCommandAckMessage(
+                       commandType: command,
+                       isAcknowledged: false,
+                       reason: null
+                       );
+
+                        var stopManagerResponseEnvelope = new MessageEnvelope<LoggerCommandAckMessage>(
+                            stopManagerResponse,
+                            MessageOrigins.LoggingManager,
+                            MessageTypes.LoggerCommandResponse
+                        );
+
+                        await _eventBus.PublishAsync(stopManagerResponseEnvelope);
+                    }
+
                     break;
-                case LoggerCommands.AdjustFilePath:
+
+                case LoggerCommands.AdjustLogFilePath:
                     var metadata = envelope.Payload.Metadata ?? new Dictionary<string, string>();
                     successfullyExecutedCommand = UpdateLogLocation(
                         logDir: metadata.GetValueOrDefault("LogDirectory", _logDir),
-                        filePath: metadata.GetValueOrDefault("FilePath", _filePath));
+                        filePath: metadata.GetValueOrDefault("FilePath", _logFileName));
+
+                    var adjustLogFilePathResponse = new LoggerCommandAckMessage(
+                        commandType: command,
+                        isAcknowledged: successfullyExecutedCommand,
+                        reason: null
+                    );
+                    var adjustLogFilePathResponseEnvelope = new MessageEnvelope<LoggerCommandAckMessage>(
+                        adjustLogFilePathResponse,
+                        MessageOrigins.LoggingManager,
+                        MessageTypes.LoggerCommandResponse
+                    );
+                    await _eventBus.PublishAsync(adjustLogFilePathResponseEnvelope);
                     break;
+                case LoggerCommands.GetLogFilePath:
+                    Console.WriteLine("SENDING THE ACK MESSAGE");
+                    successfullyExecutedCommand = true;
+                    var getPathMetadata = new Dictionary<string, string>
+                    {
+                        { "FilePath", Path.Combine(_logDir, _logFileName) }
+                    };
+                    var getPathResponse = new LoggerCommandAckMessage(
+                        commandType: command,
+                        isAcknowledged: true,
+                        reason: null
+                    )
+                    {
+                        Metadata = getPathMetadata
+                    };
+                    var getPathResponseEnvelope = new MessageEnvelope<LoggerCommandAckMessage>(
+                        getPathResponse,
+                        MessageOrigins.LoggingManager,
+                        MessageTypes.LoggerCommandResponse
+                    );
+                    await _eventBus.PublishAsync(getPathResponseEnvelope);
+                    return;
                 default:
                     // Handle unknown or unsupported command
                     break;
             }
-
-            // Generate a response message indicating the result of the command execution
-            var commandResponseMessage = new LoggerCommandAckMessage(commandType: command, isAcknowledged: successfullyExecutedCommand);
-
-            // Create a message envelope for the response
-            var responseEnvelope = new MessageEnvelope<LoggerCommandAckMessage>(
-                commandResponseMessage,
-                MessageOrigins.LoggingManager,
-                MessageTypes.LoggerCommandResponse);
-
-            // Publish the response message to the event bus
-            await _eventBus.PublishAsync(responseEnvelope);
         }
 
         /// <summary>
@@ -162,9 +248,9 @@ namespace Carebed.Managers
             }
 
             _logDir = logDir;
-            _filePath = filePath;
+            _logFileName = filePath;
 
-            result = _loggingService.ChangeFilePath(Path.Combine(_logDir, _filePath));
+            result = _loggingService.ChangeFilePath(Path.Combine(_logDir, _logFileName));
 
             return result;
         }
@@ -179,6 +265,13 @@ namespace Carebed.Managers
                 Stop();
             }
 
+            if (_isSubscribed)
+            {
+                _eventBus.UnsubscribeFromGlobalMessages(_logMessageHandler);
+                _eventBus.Unsubscribe<LoggerCommandMessage>(_logCommandHandler);
+                _isSubscribed = false;
+            }
+
             _isLoggerStarted = false;
             _loggingService.Dispose();            
         }
@@ -190,6 +283,13 @@ namespace Carebed.Managers
         {
             if( _isLoggerStarted ) return;
 
+            if (!_isSubscribed)
+            {
+                _eventBus.SubscribeToGlobalMessages(_logMessageHandler);
+                _eventBus.Subscribe<LoggerCommandMessage>(_logCommandHandler);
+                _isSubscribed = true;
+            }
+
             _loggingService.Start();
             _isLoggerStarted = true;
         }
@@ -200,6 +300,13 @@ namespace Carebed.Managers
         public void Stop()
         {
             if( !_isLoggerStarted ) return;
+
+            if (_isSubscribed)
+            {
+                _eventBus.UnsubscribeFromGlobalMessages(_logMessageHandler);
+                _eventBus.Unsubscribe<LoggerCommandMessage>(_logCommandHandler);
+                _isSubscribed = false;
+            }
 
             _loggingService.Stop();
             _isLoggerStarted = false;

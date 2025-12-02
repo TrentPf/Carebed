@@ -10,9 +10,9 @@ namespace Carebed.Infrastructure.Message.SensorMessages
         public required SensorCommands CommandType { get; set; }
 
         /// <summary>
-        /// Represents whether the Sensor can execute the given command.
+        /// Represents whether the Sensor executed the given command successfully.
         /// </summary>
-        public required bool CanExecuteCommand { get; set; }
+        public required bool CommandExecutedSuccessfully { get; set; }
 
         /// <summary>
         /// Represents an optional reason for the command acknowledgment. 

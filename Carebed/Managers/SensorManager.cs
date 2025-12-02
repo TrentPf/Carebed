@@ -13,7 +13,7 @@ namespace Carebed.Managers
     /// Top-level manager that polls configured sensors on a single timer and
     /// publishes their readings to the application's <see cref="IEventBus"/>.
     /// </summary>
-    internal class SensorManager : IManager
+    public class SensorManager : IManager
     {
 
         #region Fields and Properties
@@ -27,6 +27,8 @@ namespace Carebed.Managers
         /// A dictionary for mapping sensors to their state change handlers.
         /// </summary>
         private readonly Dictionary<ISensor, Action<SensorStates>> _stateChangedHandlers = new();
+
+        private readonly Action<MessageEnvelope<SensorCommandMessage>> _sensorCommandHandler;
 
         #endregion
 
@@ -48,8 +50,9 @@ namespace Carebed.Managers
         {
             _eventBus = eventBus ?? throw new ArgumentNullException(nameof(eventBus));
             _sensors = new List<AbstractSensor>();
+            _sensorCommandHandler = HandleSensorCommand;
 
-            if(sensorList == null)
+            if (sensorList == null)
             {
                 throw new ArgumentNullException(nameof(sensorList));
             }                
@@ -72,6 +75,53 @@ namespace Carebed.Managers
 
             // Emit initial inventory message
             EmitSensorInventoryMessage();
+
+            // Subscribe to sensor command messages
+            _eventBus.Subscribe(_sensorCommandHandler);
+        }
+
+        private void HandleSensorCommand(MessageEnvelope<SensorCommandMessage> envelope)
+        {
+            var command = envelope.Payload.CommandType;
+            var targetSensorId = envelope.Payload.SensorID;
+
+            switch (command)
+            {
+                case SensorCommands.StartSensor:
+                    StartSensor(targetSensorId);
+
+                    break;
+                case SensorCommands.StopSensor:
+                    StopSensor(targetSensorId);
+                    break;
+
+                case SensorCommands.AdjustPollingRate:
+                    var incommingCommandMessage = envelope.Payload;
+                    double newPollingRate = incommingCommandMessage.Parameters != null &&
+                                            incommingCommandMessage.Parameters.TryGetValue("IntervalSeconds", out var intervalObj) &&
+                                            intervalObj is double intervalSeconds
+                                            ? intervalSeconds
+                                            : 1.0; // Default to 1 second if not provided
+                    bool result = AdjustPollingRate(newPollingRate);
+                    if(result)
+                    {
+                        // Send a SensorCommandAck Message indicating success
+                        var ackMessage = new SensorCommandAckMessage
+                        {
+                            TypeOfSensor = incommingCommandMessage.TypeOfSensor,
+                            CommandType = incommingCommandMessage.CommandType,
+                            CorrelationId = incommingCommandMessage.CorrelationId,
+                            SensorID = targetSensorId,
+                            CommandExecutedSuccessfully = true
+                        };
+                        var ackResponse = new MessageEnvelope<SensorCommandAckMessage>(ackMessage, MessageOrigins.SensorManager, MessageTypes.SensorCommandAck);
+                        _ = _eventBus.PublishAsync(ackResponse);
+                    }
+                    break;
+                default:
+                    // Handle other commands as needed
+                    break;
+            }            
         }
 
         private void HandleStateChanged(AbstractSensor sensor, SensorStates state)
@@ -259,6 +309,7 @@ namespace Carebed.Managers
             foreach (var item in _stateChangedHandlers)
                 item.Key.OnStateChanged -= item.Value;
             _stateChangedHandlers.Clear();
+            _eventBus.Unsubscribe(_sensorCommandHandler);
         }
 
         public void EmitSensorInventoryMessage()

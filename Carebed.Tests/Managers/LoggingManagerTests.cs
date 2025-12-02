@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Threading.Tasks;
 using Carebed.Infrastructure.Enums;
 using Carebed.Infrastructure.EventBus;
@@ -169,7 +170,7 @@ namespace Carebed.Tests.Managers
                 { "FilePath", "newfile.txt" }
             };
             var envelope = new MessageEnvelope<LoggerCommandMessage>(
-                new LoggerCommandMessage(LoggerCommands.AdjustFilePath, metadata),
+                new LoggerCommandMessage(LoggerCommands.AdjustLogFilePath, metadata),
                 MessageOrigins.LoggingManager,
                 MessageTypes.LoggerCommandResponse);
 
@@ -234,6 +235,208 @@ namespace Carebed.Tests.Managers
 
             _mockEventBus.Verify(b => b.PublishAsync(It.Is<MessageEnvelope<LoggerCommandAckMessage>>(ack =>
                 ack.Payload.CommandType == LoggerCommands.Stop)), Times.Once);
+        }
+
+        [TestMethod]
+        public async Task LoggingManager_CreatesLogFile_AtCorrectPath()
+        {
+            var tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+            Directory.CreateDirectory(tempDir);
+            var logFile = "testlog.txt";
+            var logPath = Path.Combine(tempDir, logFile);
+            try
+            {
+                var logger = new SimpleFileLogger(logPath);
+                var eventBus = new Mock<IEventBus>().Object;
+                var manager = new LoggingManager(tempDir, logFile, logger, eventBus);
+                manager.Start();
+                manager.Stop();
+                Assert.IsTrue(File.Exists(logPath), $"Log file was not created at {logPath}");
+            }
+            finally
+            {
+                if (File.Exists(logPath)) File.Delete(logPath);
+                if (Directory.Exists(tempDir)) Directory.Delete(tempDir);
+            }
+        }
+
+        [TestMethod]
+        public async Task LoggingManager_WritesLogEntry_ToLogFile()
+        {
+            var tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+            Directory.CreateDirectory(tempDir);
+            var logFile = "testlog.txt";
+            var logPath = Path.Combine(tempDir, logFile);
+            try
+            {
+                var logger = new SimpleFileLogger(logPath);
+                var eventBus = new Mock<IEventBus>().Object;
+                var manager = new LoggingManager(tempDir, logFile, logger, eventBus);
+                manager.Start();
+                var envelopeMock = new Mock<IMessageEnvelope>();
+                envelopeMock.Setup(e => e.MessageId).Returns(Guid.NewGuid());
+                envelopeMock.Setup(e => e.Timestamp).Returns(DateTime.UtcNow);
+                envelopeMock.Setup(e => e.MessageOrigin).Returns(MessageOrigins.LoggingManager);
+                envelopeMock.Setup(e => e.MessageType).Returns(MessageTypes.LoggerCommandResponse);
+                envelopeMock.Setup(e => e.Payload).Returns("TestPayload");
+                manager.HandleLogMessage(envelopeMock.Object);
+                await Task.Delay(300); // Allow background worker to process
+                manager.Stop();
+                var fileContent = File.ReadAllText(logPath);
+                Assert.IsTrue(fileContent.Contains("TestPayload"), "Log entry was not written to the log file.");
+            }
+            finally
+            {
+                if (File.Exists(logPath)) File.Delete(logPath);
+                if (Directory.Exists(tempDir)) Directory.Delete(tempDir);
+            }
+        }
+
+        [TestMethod]
+        public async Task HandleLogCommand_GetLogFilePath_SendsAckWithCorrectFilePath()
+        {
+            // Arrange
+            var logDir = "logs";
+            var logFile = "log.txt";
+            var expectedPath = System.IO.Path.Combine(logDir, logFile);
+
+            // Setup the LoggingManager with known logDir and logFile
+            var manager = new LoggingManager(logDir, logFile, _mockLoggingService.Object, _mockEventBus.Object);
+
+            LoggerCommandAckMessage receivedAck = null;
+            _mockEventBus
+                .Setup(b => b.PublishAsync(It.IsAny<MessageEnvelope<LoggerCommandAckMessage>>()))
+                .Callback<IMessageEnvelope>(env =>
+                {
+                    var ackEnvelope = env as MessageEnvelope<LoggerCommandAckMessage>;
+                    if (ackEnvelope != null)
+                        receivedAck = ackEnvelope.Payload;
+                })
+                .Returns(Task.CompletedTask);
+
+            var envelope = new MessageEnvelope<LoggerCommandMessage>(
+                new LoggerCommandMessage(LoggerCommands.GetLogFilePath),
+                MessageOrigins.LoggingManager,
+                MessageTypes.LoggerCommandResponse);
+
+            var handleLogCommand = typeof(LoggingManager)
+                .GetMethod("HandleLogCommand", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+
+            // Act
+            var task = (Task)handleLogCommand.Invoke(manager, new object[] { envelope });
+            await task;
+
+            // Assert
+            Assert.IsNotNull(receivedAck, "No LoggerCommandAckMessage was published.");
+            Assert.IsTrue(receivedAck.IsAcknowledged, "The ack message was not acknowledged.");
+            Assert.IsNotNull(receivedAck.Metadata, "Metadata should not be null.");
+            Assert.IsTrue(receivedAck.Metadata.ContainsKey("FilePath"), "Metadata does not contain 'FilePath'.");
+            Assert.AreEqual(expectedPath, receivedAck.Metadata["FilePath"], "FilePath in ack does not match expected.");
+        }
+
+        [TestMethod]
+        public async Task HandleLogCommand_StartCommand_WhenAlreadyStarted_SendsNegativeAck()
+        {
+            // Arrange
+            _mockLoggingService.Setup(s => s.Start()).Returns(Task.CompletedTask);
+            _manager.Start();
+
+            var envelope = new MessageEnvelope<LoggerCommandMessage>(
+                new LoggerCommandMessage(LoggerCommands.Start),
+                MessageOrigins.LoggingManager,
+                MessageTypes.LoggerCommandResponse);
+
+            MessageEnvelope<LoggerCommandAckMessage> receivedEnvelope = null;
+            _mockEventBus.Setup(b => b.PublishAsync(It.IsAny<MessageEnvelope<LoggerCommandAckMessage>>()))
+                .Callback<MessageEnvelope<LoggerCommandAckMessage>>(env => receivedEnvelope = env)
+                .Returns(Task.CompletedTask);
+
+            var handleLogCommand = typeof(LoggingManager)
+                .GetMethod("HandleLogCommand", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+
+            // Act
+            var task = (Task)handleLogCommand.Invoke(_manager, new object[] { envelope });
+            await task;
+
+            // Assert
+            Assert.IsNotNull(receivedEnvelope, "No ack message was published.");
+            Assert.IsFalse(receivedEnvelope.Payload.IsAcknowledged, "Ack should indicate failure when already started.");
+            Assert.AreEqual(LoggerCommands.Start, receivedEnvelope.Payload.CommandType);
+        }
+
+        [TestMethod]
+        public async Task HandleLogCommand_StopCommand_WhenAlreadyStopped_SendsNegativeAck()
+        {
+            // Arrange: Ensure logger is stopped
+            var envelope = new MessageEnvelope<LoggerCommandMessage>(
+                new LoggerCommandMessage(LoggerCommands.Stop),
+                MessageOrigins.LoggingManager,
+                MessageTypes.LoggerCommandResponse);
+
+            MessageEnvelope<LoggerCommandAckMessage> receivedEnvelope = null;
+            _mockEventBus.Setup(b => b.PublishAsync(It.IsAny<MessageEnvelope<LoggerCommandAckMessage>>()))
+                .Callback<MessageEnvelope<LoggerCommandAckMessage>>(env => receivedEnvelope = env)
+                .Returns(Task.CompletedTask);
+
+            var handleLogCommand = typeof(LoggingManager)
+                .GetMethod("HandleLogCommand", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+
+            // Act
+            var task = (Task)handleLogCommand.Invoke(_manager, new object[] { envelope });
+            await task;
+
+            // Assert
+            Assert.IsNotNull(receivedEnvelope, "No ack message was published.");
+            Assert.IsFalse(receivedEnvelope.Payload.IsAcknowledged, "Ack should indicate failure when already stopped.");
+            Assert.AreEqual(LoggerCommands.Stop, receivedEnvelope.Payload.CommandType);
+        }
+
+        [TestMethod]
+        public async Task HandleLogCommand_AdjustLogFilePath_WithInvalidFilePath_SendsNegativeAck()
+        {
+            // Arrange
+            var metadata = new Dictionary<string, string>
+            {
+                { "LogDirectory", "logs" },
+                { "FilePath", "invalid|file.txt" }
+            };
+            var envelope = new MessageEnvelope<LoggerCommandMessage>(
+                new LoggerCommandMessage(LoggerCommands.AdjustLogFilePath, metadata),
+                MessageOrigins.LoggingManager,
+                MessageTypes.LoggerCommandResponse);
+
+            MessageEnvelope<LoggerCommandAckMessage> receivedEnvelope = null;
+            _mockEventBus.Setup(b => b.PublishAsync(It.IsAny<MessageEnvelope<LoggerCommandAckMessage>>()))
+                .Callback<MessageEnvelope<LoggerCommandAckMessage>>(env => receivedEnvelope = env)
+                .Returns(Task.CompletedTask);
+
+            var handleLogCommand = typeof(LoggingManager)
+                .GetMethod("HandleLogCommand", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+
+            // Act & Assert
+            await Assert.ThrowsExceptionAsync<ArgumentException>(async () =>
+            {
+                var task = (Task)handleLogCommand.Invoke(_manager, new object[] { envelope });
+                await task;
+            });
+        }
+
+        [TestMethod]
+        public async Task HandleLogCommand_UnknownCommand_DoesNotThrow()
+        {
+            // Arrange: Use an undefined enum value
+            var unknownCommand = (LoggerCommands)9999;
+            var envelope = new MessageEnvelope<LoggerCommandMessage>(
+                new LoggerCommandMessage(unknownCommand),
+                MessageOrigins.LoggingManager,
+                MessageTypes.LoggerCommandResponse);
+
+            var handleLogCommand = typeof(LoggingManager)
+                .GetMethod("HandleLogCommand", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+
+            // Act & Assert: Should not throw
+            var task = (Task)handleLogCommand.Invoke(_manager, new object[] { envelope });
+            await task;
         }
     }
 }

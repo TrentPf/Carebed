@@ -36,7 +36,7 @@ namespace Carebed.Infrastructure.EventBus
                 _globalHandlers.Add(handler);
             }
 
-            System.Diagnostics.Debug.WriteLine($"Global handler count: {_globalHandlers.Count}");
+            //System.Diagnostics.Debug.WriteLine($"Global handler count: {_globalHandlers.Count}");
         }
 
         public void UnsubscribeFromGlobalMessages(Action<IMessageEnvelope> handler)
@@ -49,7 +49,7 @@ namespace Carebed.Infrastructure.EventBus
 
         protected void NotifyAll(IMessageEnvelope envelope)
         {
-            System.Diagnostics.Debug.WriteLine($"Notifying global handlers [{_globalHandlers.Count}]");
+            //System.Diagnostics.Debug.WriteLine($"Notifying global handlers [{_globalHandlers.Count}]");
             List<Action<IMessageEnvelope>> handlersCopy;
             lock (_lock)
             {

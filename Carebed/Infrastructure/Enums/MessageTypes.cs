@@ -20,6 +20,8 @@
         AlertAction,
         AlertClearAck,
         ActuatorInventory,
+        SensorCommand,
+        SensorCommandAck,
         SensorInventory,
         SensorError,
         SensorStatus,

@@ -167,6 +167,18 @@ namespace Carebed.Managers
             var message = envelope.Payload;
             if (message == null || message.Payload == null) return;
 
+            if (message.clearAllMessages)
+            {
+                // Clear all alerts logic here
+                _activeAlerts.Clear();
+
+                // Optionally, send an ack message
+                var ack = new AlertClearAckMessage { Source = "ALL", alertCleared = true };
+                var ackEnv = new MessageEnvelope<AlertClearAckMessage>(ack, MessageOrigins.AlertManager, MessageTypes.AlertClearAck);
+                _ = _eventBus.PublishAsync(ackEnv);
+                return;
+            }
+
             if (message.Payload is SensorMessageBase sensorMsg)
             {
                 var sensorId = sensorMsg.SensorID;

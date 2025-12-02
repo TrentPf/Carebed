@@ -86,7 +86,7 @@ namespace Carebed.Infrastructure.Logging
                 Directory.CreateDirectory(dir);
 
                 // Open file stream for appending log messages
-                var fs = new FileStream(_filePath, FileMode.Append, FileAccess.Write, FileShare.Read);
+                var fs = new FileStream(_filePath, FileMode.Append, FileAccess.Write, FileShare.ReadWrite);
                 _writer = new StreamWriter(fs) { AutoFlush = false };
 
                 // Mark as started
@@ -260,6 +260,7 @@ namespace Carebed.Infrastructure.Logging
             {
                 try
                 {
+                    //Console.WriteLine("Attempting to write log line: " + line);
                     _writer?.WriteLine(line);
                 }
                 catch
