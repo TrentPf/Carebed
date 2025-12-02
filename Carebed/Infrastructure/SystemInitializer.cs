@@ -30,7 +30,11 @@ namespace Carebed.Infrastructure
                 // ... add more actuators as needed
             };
 
-            var sensorManager = new SensorManager(_eventBus, sensors);
+
+            // Create SensorManager
+            var sensorManager = new SensorManager(_eventBus, sensors, 15000);
+
+            // Create ActuatorManager
             var actuatorManager = new ActuatorManager(_eventBus, actuators);
 
             // Create AlertManager

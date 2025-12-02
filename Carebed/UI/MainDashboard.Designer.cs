@@ -23,29 +23,32 @@ namespace Carebed.UI
         /// </summary>
         private System.ComponentModel.IContainer components = null;
 
-            #region Fields and Properties
+        #region Fields and Properties
         
-            // A reference to the event bus for publishing and subscribing to events.        
-            private readonly IEventBus _eventBus;
+        // A reference to the event bus for publishing and subscribing to events.        
+        private readonly IEventBus _eventBus;
 
-            // A single AlertViewModel instance for databinding
-            private AlertViewModel alertViewModel = new AlertViewModel();
+        // A single AlertViewModel instance for databinding
+        private AlertViewModel alertViewModel = new AlertViewModel();
 
-            // A databinding source for alert banner
-            private BindingSource alertBindingSource = new BindingSource();
+        // A databinding source for alert banner
+        private BindingSource alertBindingSource = new BindingSource();
 
-            // Flag to indicate if alerts are paused
-            private bool alertsPaused = false;
+        // Flag to indicate if alerts are paused
+        private bool alertsPaused = false;
 
-            // Sensor alert handlers
-            private Action<MessageEnvelope<AlertActionMessage<SensorTelemetryMessage>>>? _alertHandlerSensorTelemetry;
-            private Action<MessageEnvelope<AlertActionMessage<SensorStatusMessage>>>? _alertHandlerSensorStatus;
-            private Action<MessageEnvelope<AlertActionMessage<SensorErrorMessage>>>? _alertHandlerSensorError;
+        // List to store all global messages for logging
+        private List<IMessageEnvelope> allGlobalMessages = new();
 
-            // Actuator alert handlers
-            private Action<MessageEnvelope<AlertActionMessage<ActuatorTelemetryMessage>>>? _alertHandlerActuatorTelemetry;
-            private Action<MessageEnvelope<AlertActionMessage<ActuatorStatusMessage>>>? _alertHandlerActuatorStatus;
-            private Action<MessageEnvelope<AlertActionMessage<ActuatorErrorMessage>>>? _alertHandlerActuatorError;
+        // Sensor alert handlers
+        private Action<MessageEnvelope<AlertActionMessage<SensorTelemetryMessage>>>? _alertHandlerSensorTelemetry;
+        private Action<MessageEnvelope<AlertActionMessage<SensorStatusMessage>>>? _alertHandlerSensorStatus;
+        private Action<MessageEnvelope<AlertActionMessage<SensorErrorMessage>>>? _alertHandlerSensorError;
+
+        // Actuator alert handlers
+        private Action<MessageEnvelope<AlertActionMessage<ActuatorTelemetryMessage>>>? _alertHandlerActuatorTelemetry;
+        private Action<MessageEnvelope<AlertActionMessage<ActuatorStatusMessage>>>? _alertHandlerActuatorStatus;
+        private Action<MessageEnvelope<AlertActionMessage<ActuatorErrorMessage>>>? _alertHandlerActuatorError;
 
         // Sensor grid for displaying telemetry data
         private DataGridView sensorGridView;
@@ -54,12 +57,15 @@ namespace Carebed.UI
         // Alert Clear Ack handler
         private Action<MessageEnvelope<AlertClearAckMessage>>? _alertClearAckHandler;
 
-
         // Logger Command Ack handler
         private Action<MessageEnvelope<LoggerCommandAckMessage>>? _loggerCommandAckHandler;
 
         // Sensor Command Ack handler
         private Action<MessageEnvelope<SensorCommandAckMessage>>? _sensorCommandAckHandler;
+
+        // Global log message handler
+        private Action<IMessageEnvelope> _globalLogHandler;
+
         #endregion
 
         #region Windows Forms Elements
@@ -118,18 +124,26 @@ namespace Carebed.UI
         private TableLayoutPanel alertLogContainer;
         private Button clearAlertsButton;
         private Button pauseAlertsButton;
-
-        private Button SensorOnOFFbutton;
+        #endregion
 
         #region Logs Viewer Section
-        private RichTextBox logRichTextBox;
-        private System.Windows.Forms.Timer logFileTimer;
+        private DataGridView logGridView;
         private string? logFilePath;
-        private long lastLogFileLength = 0;
-        private bool logFileErrorShown = false;
-        #endregion
+        //private long lastLogFileLength = 0;
+        //private bool logFileErrorShown = false;
+        private ComboBox logTypeFilterComboBox;
+        private Button applyLogFilterButton;
+        private List<string> allLogLines = new();
+        private string currentLogTypeFilter = "All";
+        private Button liveLogsButton;
+        private Button showLogFileButton;
+        private Button refreshLogFileButton;
+        private bool showingFileLog = false;
+        private FlowLayoutPanel logButtonPanel; // Add this field
+        private Guid? selectedMessageId = null;
+        private const int MaxLogMessages = 1000; // Set your desired limit
 
-        #endregion
+        #endregion        
 
         #endregion
 
@@ -176,54 +190,59 @@ namespace Carebed.UI
                 Dock = DockStyle.Fill,
                 BackColor = Color.Transparent,
                 CellBorderStyle = TableLayoutPanelCellBorderStyle.None,
-                Padding = new Padding(8, 0, 8, 0)
+                Padding = new Padding(8, 4, 8, 4)
             };
             alertBannerTable.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 20));
             alertBannerTable.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 30));
             alertBannerTable.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 30));
             alertBannerTable.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 20));
-            alertBannerTable.RowStyles.Add(new RowStyle(SizeType.Absolute, 18));
+            alertBannerTable.RowStyles.Add(new RowStyle(SizeType.Absolute, 40)); // Try 36 or 40
             alertBannerTable.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
             // Column titles
             alertBannerTimeTitle = new Label
             {
-                Text = "Time",
+                Text = "Time:",
                 Font = new Font("Segoe UI", 9, FontStyle.Bold),
                 TextAlign = ContentAlignment.MiddleLeft,
                 Dock = DockStyle.Fill,
-                ForeColor = Color.LightGray
+                ForeColor = Color.WhiteSmoke,
+                AutoSize = false
+              
             };
             alertBannerSourceTitle = new Label
             {
-                Text = "Source",
+                Text = "Source:",
                 Font = new Font("Segoe UI", 9, FontStyle.Bold),
                 TextAlign = ContentAlignment.MiddleLeft,
                 Dock = DockStyle.Fill,
-                ForeColor = Color.LightGray
+                ForeColor = Color.WhiteSmoke,
+                AutoSize = false
             };
             alertBannerValueTitle = new Label
             {
-                Text = "Value",
+                Text = "Value:",
                 Font = new Font("Segoe UI", 9, FontStyle.Bold),
                 TextAlign = ContentAlignment.MiddleLeft,
                 Dock = DockStyle.Fill,
-                ForeColor = Color.LightGray
+                ForeColor = Color.WhiteSmoke,
+                AutoSize = false
             };
             alertBannerSeverityTitle = new Label
             {
-                Text = "Severity",
+                Text = "Severity:",
                 Font = new Font("Segoe UI", 9, FontStyle.Bold),
                 TextAlign = ContentAlignment.MiddleLeft,
                 Dock = DockStyle.Fill,
-                ForeColor = Color.LightGray
+                ForeColor = Color.WhiteSmoke,
+                AutoSize = false
             };
 
             // Value labels
             alertBannerTimeValue = new Label
             {
                 Text = "",
-                Font = new Font("Segoe UI", 11, FontStyle.Regular),
+                Font = new Font("Segoe UI", 11, FontStyle.Bold),
                 TextAlign = ContentAlignment.MiddleLeft,
                 Dock = DockStyle.Fill,
                 ForeColor = Color.White
@@ -231,7 +250,7 @@ namespace Carebed.UI
             alertBannerSourceValue = new Label
             {
                 Text = "",
-                Font = new Font("Segoe UI", 11, FontStyle.Regular),
+                Font = new Font("Segoe UI", 11, FontStyle.Bold),
                 TextAlign = ContentAlignment.MiddleLeft,
                 Dock = DockStyle.Fill,
                 ForeColor = Color.White
@@ -265,11 +284,13 @@ namespace Carebed.UI
 
             // Setup alert banner panel
             alertBanner.Name = "AlertBanner";
-            alertBanner.Height = 60;
+            alertBanner.Height = 100;
             alertBanner.Dock = DockStyle.Top;
             alertBanner.BackColor = NoAlertsActiveColour;
             alertBanner.Controls.Clear();
             alertBanner.Controls.Add(alertBannerTable);
+
+            alertBannerTable.Height = 100;
 
             // Add banner to form
             this.Controls.Add(alertBanner);
@@ -524,20 +545,77 @@ namespace Carebed.UI
 
         private void InitializeLogViewer()
         {
-            logRichTextBox = new RichTextBox
+            logGridView = new DataGridView
             {
                 Dock = DockStyle.Fill,
                 ReadOnly = true,
-                WordWrap = false,
-                Font = new Font("Consolas", 10),
-                BackColor = Color.Black,
+                AllowUserToAddRows = false,
+                AllowUserToDeleteRows = false,
+                AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
+                BackgroundColor = Color.Black,
                 ForeColor = Color.LightGreen,
-                ScrollBars = RichTextBoxScrollBars.Vertical
+                ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.AutoSize,
+                DefaultCellStyle = new DataGridViewCellStyle
+                {
+                    BackColor = Color.Black,      // cell background
+                    ForeColor = Color.LightGreen, // cell text
+                    SelectionBackColor = Color.DarkGreen,
+                    SelectionForeColor = Color.White
+                }
+            };
+            logGridView.Columns.Add("MessageId", "MessageId");
+            logGridView.Columns.Add("Type", "Type");
+            logGridView.Columns.Add("Timestamp", "Timestamp");
+            logGridView.Columns.Add("Source", "Source");
+            logGridView.Columns.Add("Message", "Message");
+            
+            // Make MessageId column hidden
+            logGridView.Columns["MessageId"].Visible = false;
+
+            logTypeFilterComboBox = new ComboBox
+            {
+                Dock = DockStyle.Top,
+                DropDownStyle = ComboBoxStyle.DropDownList
             };
 
-            logFileTimer = new System.Windows.Forms.Timer();
-            logFileTimer.Interval = 1000; // 5000 milliseconds            
-            logFileTimer.Tick += LogFileTimer_Tick;
+            // Populate with all MessageOrigins enum values
+            logTypeFilterComboBox.Items.Add("All");
+            
+            foreach (var origin in Enum.GetValues(typeof(MessageOrigins)))
+                logTypeFilterComboBox.Items.Add(origin.ToString());
+
+            logTypeFilterComboBox.SelectedIndex = 0;
+
+            applyLogFilterButton = new Button
+            {
+                Text = "Apply Filter",
+                Width = 100
+            };            
+
+            showLogFileButton = new Button
+            {
+                Text = "Show Log File",
+                Width = 100
+            };           
+
+            refreshLogFileButton = new Button
+            {
+                Text = "Refresh",
+                Width = 100,
+                Visible = false
+            };
+
+            var logButtonPanel = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Top,
+                FlowDirection = FlowDirection.LeftToRight,
+                AutoSize = true,
+                Padding = new Padding(4),
+                WrapContents = false
+            };
+
+            // Store reference for use in LogsTabButton_Click
+            this.logButtonPanel = logButtonPanel;
         }
 
         /// <summary>
@@ -579,6 +657,9 @@ namespace Carebed.UI
             // Register sensor command ack handler
             _sensorCommandAckHandler = OnSensorCommandAck;
 
+            // Register global log message handler
+            _globalLogHandler = OnGlobalLogMessage;
+
             // Register sensor handlers with event bus
             _eventBus.Subscribe(_alertHandlerSensorTelemetry);
             _eventBus.Subscribe(_alertHandlerSensorStatus);
@@ -598,20 +679,93 @@ namespace Carebed.UI
             // Register the logger ack message handler with event bus
             _eventBus.Subscribe(_loggerCommandAckHandler);
 
+            // Register to the global messages so we can log them
+            _eventBus.SubscribeToGlobalMessages(_globalLogHandler);
+
             // Attach tab button click handlers
             vitalsTabButton.Click += VitalsTabButton_Click;
             actuatorsTabButton.Click += ActuatorsTabButton_Click;
             logsTabButton.Click += LogsTabButton_Click;
             settingsTabButton.Click += SettingsTabButton_Click;
+
+            // Log viewer event handlers
+            logGridView.CellDoubleClick += LogGridView_CellDoubleClick;
+            applyLogFilterButton.Click += ApplyLogFilterButton_Click;
+            //showLogFileButton.Click += (s, e) => ShowLogFile();
+            //refreshLogFileButton.Click += (s, e) => RefreshLogFile();
+            logGridView.SelectionChanged += logGridView_SelectionChanged;
+
+            logTypeFilterComboBox.SelectedIndexChanged += LogTypeFilterComboBox_SelectedIndexChanged;
         }
 
 
+
+        private void LogTypeFilterComboBox_SelectedIndexChanged(object? sender, EventArgs e)
+        {
+
+            ApplyLogFilter();
+        }
 
         #endregion
 
         #region Event Handlers
 
+        private void LogGridView_CellDoubleClick(object? sender, DataGridViewCellEventArgs e)
+        {
+            if (e.RowIndex < 0 || e.RowIndex >= logGridView.Rows.Count)
+                return;
 
+            var row = logGridView.Rows[e.RowIndex];
+            var type = row.Cells["Type"].Value?.ToString() ?? "";
+            var timestamp = row.Cells["Timestamp"].Value?.ToString() ?? "";
+            var source = row.Cells["Source"].Value?.ToString() ?? "";
+            var message = row.Cells["Message"].Value?.ToString() ?? "";
+
+            string details = $"Type: {type}\nTime: {timestamp}\nSource: {source}\nMessage:\n{message}";
+
+            ShowAlertPopup(details, MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+
+        private void logGridView_SelectionChanged(object? sender, EventArgs e)
+        {
+            if (logGridView.SelectedRows.Count > 0)
+            {
+                var row = logGridView.SelectedRows[0];
+                if (row.Cells["MessageId"].Value is Guid id)
+                    selectedMessageId = id;
+            }
+        }
+
+        private void OnGlobalLogMessage(IMessageEnvelope envelope)
+        {
+            RunOnUiThread(() =>
+            {
+                allGlobalMessages.Add(envelope);
+
+                // Limit the number of messages held
+                if (allGlobalMessages.Count > MaxLogMessages)
+                    allGlobalMessages.RemoveAt(0); // Remove oldest
+
+                string selectedOrigin = logTypeFilterComboBox.SelectedItem?.ToString() ?? "All";
+                if (selectedOrigin == "All" || envelope.MessageOrigin.ToString() == selectedOrigin)
+                {
+                    logGridView.Rows.Add(
+                        envelope.MessageId,
+                        envelope.MessageOrigin.ToString(),
+                        envelope.MessageType.ToString(),
+                        envelope.Timestamp.ToString("yyyy-MM-dd HH:mm:ss"),
+                        envelope.Payload?.ToString() ?? ""
+                    );
+                }
+            });
+        }
+
+        private void ApplyLogFilterButton_Click(object? sender, EventArgs e)
+        {
+            // Get the selected filter type from the ComboBox
+            currentLogTypeFilter = logTypeFilterComboBox.SelectedItem?.ToString() ?? "All";
+            ApplyLogFilter();
+        }
 
         private void OnSensorCommandAck(MessageEnvelope<SensorCommandAckMessage> envelope)
         {
@@ -663,8 +817,8 @@ namespace Carebed.UI
                         RunOnUiThread(() =>
                         {
                             logFilePath = envelope.Payload.Metadata?["FilePath"];
-                            LoadLogFile(); // Custom method to load and display t
-                            logFileTimer.Start();
+                            //LoadLogFile(); // Custom method to load and display t
+                            //logFileTimer.Start();
                             //logRichTextBox.Text = $"Log File Path: {envelope.Payload.Metadata["FilePath"]}";
 
                         });
@@ -674,8 +828,6 @@ namespace Carebed.UI
                     // Handle unknown command types if necessary
                     break;
             }
-
-            RunOnUiThread(() => logRichTextBox.Text = "OnLoggerCommandAck called");
         }
 
         /// <summary>
@@ -800,7 +952,7 @@ namespace Carebed.UI
         /// <param name="e"></param>
         private void VitalsTabButton_Click(object? sender, EventArgs e)
         {
-            logFileTimer.Stop(); // Stop log updates
+            //logFileTimer.Stop(); // Stop log updates
             ShowSensorGrid();
             mainViewportPanel.BackColor = Color.LightSkyBlue; // Example color for Vitals
         }
@@ -812,7 +964,7 @@ namespace Carebed.UI
         /// <param name="e"></param>
         private void ActuatorsTabButton_Click(object? sender, EventArgs e)
         {
-            logFileTimer.Stop();
+            //logFileTimer.Stop();
             HideSensorGrid();
             mainViewportPanel.BackColor = Color.LightGreen; // Example color for Actuators
         }
@@ -828,20 +980,14 @@ namespace Carebed.UI
             RunOnUiThread(() =>
             {
                 mainViewportPanel.Controls.Clear();
-                mainViewportPanel.Controls.Add(logRichTextBox);
-                logRichTextBox.Text = "Loading log file...";
+                mainViewportPanel.Controls.Add(logGridView);
+                mainViewportPanel.Controls.Add(logButtonPanel);
+                mainViewportPanel.Controls.Add(logTypeFilterComboBox);
+                //mainViewportPanel.Controls.Add(showLogFileButton);
+                //mainViewportPanel.Controls.Add(refreshLogFileButton);
             });
-           
-            //logRichTextBox.Text = "Log viewer loaded"; // Debug: Should se
-
-            if (string.IsNullOrEmpty(logFilePath))
-            {
-                RequestLogFilePath();
-            }
-            else
-            {
-                logFileTimer.Start();
-            }
+            logGridView.Rows.Clear();
+            ApplyLogFilter();
         }
 
         /// <summary>
@@ -1106,51 +1252,151 @@ namespace Carebed.UI
         }
 
         #endregion
-
         #region Methods
-        private void LoadLogFile()
+
+        // Helper to parse a log line into structured columns
+        private (string Type, string Timestamp, string Source, string Message)? ParseLogLine(string line)
         {
-            if (!string.IsNullOrEmpty(logFilePath) && File.Exists(logFilePath))
+            // Example log format: [INFO] 2025-12-02 10:00:00 SourceName - Message text
+            var match = System.Text.RegularExpressions.Regex.Match(line, @"\[(\w+)\]\s+([^\-]+)\s+([^\-]+)\s*-\s*(.*)");
+            if (match.Success)
             {
-                using (var stream = new FileStream(logFilePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
-                using (var reader = new StreamReader(stream))
-                {
-                    logRichTextBox.Text = reader.ReadToEnd();
-                }
-                lastLogFileLength = new FileInfo(logFilePath).Length;
+                var type = match.Groups[1].Value;
+                var timestamp = match.Groups[2].Value.Trim();
+                var source = match.Groups[3].Value.Trim();
+                var message = match.Groups[4].Value.Trim();
+                return (type, timestamp, source, message);
+            }
+            // Fallback for lines that don't match
+            return null;
+        }
+
+        private void ApplyLogFilter()
+        {
+            // Track the selected MessageId before clearing
+            Guid? prevSelectedId = selectedMessageId;
+            logGridView.Rows.Clear();
+            string selectedOrigin = logTypeFilterComboBox.SelectedItem?.ToString() ?? "All";
+            var filtered = allGlobalMessages.Where(msg =>
+                selectedOrigin == "All" || msg.MessageOrigin.ToString() == selectedOrigin);
+
+            int selectedRowIndex = -1;
+            int rowIndex = 0;
+            foreach (var msg in filtered)
+            {
+                logGridView.Rows.Add(
+                    msg.MessageId,
+                    msg.MessageOrigin.ToString(),
+                    msg.MessageType.ToString(),
+                    msg.Timestamp.ToString("yyyy-MM-dd HH:mm:ss"),
+                    msg.Payload?.ToString() ?? ""
+                );
+                if (prevSelectedId.HasValue && msg.MessageId == prevSelectedId.Value)
+                    selectedRowIndex = rowIndex;
+                rowIndex++;
+            }
+
+            // Reselect and scroll to the previously selected row AFTER all rows are added
+            if (selectedRowIndex >= 0 && selectedRowIndex < logGridView.Rows.Count)
+            {
+                logGridView.ClearSelection();
+                logGridView.Rows[selectedRowIndex].Selected = true;
+                logGridView.FirstDisplayedScrollingRowIndex = selectedRowIndex;
+            }
+            else if (logGridView.Rows.Count > 0)
+            {
+                // Optionally, scroll to the bottom if no selection
+                logGridView.ClearSelection();
+                logGridView.Rows[logGridView.Rows.Count - 1].Selected = true;
+                logGridView.FirstDisplayedScrollingRowIndex = logGridView.Rows.Count - 1;
             }
         }
 
-        private void LogFileTimer_Tick(object? sender, EventArgs e)
+        private void ShowLiveLogs()
         {
-            if (string.IsNullOrEmpty(logFilePath) || !File.Exists(logFilePath))
-                return;
-
-            var fileInfo = new FileInfo(logFilePath);
-            if (fileInfo.Length == lastLogFileLength)
-                return; // No new content
-
-            int oldSelectionStart = logRichTextBox.SelectionStart;
-            bool wasAtEnd = (oldSelectionStart == logRichTextBox.TextLength);
-
-            using (var stream = new FileStream(logFilePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
-            using (var reader = new StreamReader(stream))
-            {
-                logRichTextBox.Text = reader.ReadToEnd();
-            }
-            lastLogFileLength = fileInfo.Length;
-
-            if (wasAtEnd)
-            {
-                logRichTextBox.SelectionStart = logRichTextBox.TextLength;
-                logRichTextBox.ScrollToCaret();
-            }
-            else
-            {
-                logRichTextBox.SelectionStart = oldSelectionStart;
-                logRichTextBox.ScrollToCaret();
-            }
+            // Clear grid, subscribe to global messages
+            logGridView.Rows.Clear();
+            _eventBus.SubscribeToGlobalMessages(_globalLogHandler);
         }
+
+        //private void ShowLogFile()
+        //{
+        //    showingFileLog = true;
+        //    _eventBus.UnsubscribeFromGlobalMessages(_globalLogHandler);
+        //    refreshLogFileButton.Visible = true;
+        //    LoadLogFile();
+        //}
+
+        //private void RefreshLogFile()
+        //{
+        //    if (showingFileLog)
+        //        LoadLogFile();
+        //}
+
+
+        //private void LoadLogFile()
+        //{
+        //    logGridView.Rows.Clear();
+        //    if (!string.IsNullOrEmpty(logFilePath) && File.Exists(logFilePath))
+        //    {
+        //        var logLines = new List<string>();
+        //        using (var stream = new FileStream(logFilePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+        //        using (var reader = new StreamReader(stream))
+        //        {
+        //            string? line;
+        //            while ((line = reader.ReadLine()) != null)
+        //            {
+        //                logLines.Add(line);
+        //            }
+        //        }
+        //        allLogLines = logLines;
+        //        foreach (var entry in allLogLines.Select(ParseLogLine).Where(e => e != null))
+        //        {
+        //            var (type, timestamp, source, message) = entry!.Value;
+        //            logGridView.Rows.Add(type, timestamp, source, message);
+        //        }
+        //    }
+        //}
+
+        //private void LogFileTimer_Tick(object? sender, EventArgs e)
+        //{
+        //    if (string.IsNullOrEmpty(logFilePath) || !File.Exists(logFilePath))
+        //        return;
+
+        //    var fileInfo = new FileInfo(logFilePath);
+        //    if (fileInfo.Length == lastLogFileLength)
+        //        return; // No new content
+
+        //    // Read new lines from the log file
+        //    var newLogLines = new List<string>();
+        //    using (var stream = new FileStream(logFilePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+        //    using (var reader = new StreamReader(stream))
+        //    {
+        //        string? line;
+        //        while ((line = reader.ReadLine()) != null)
+        //        {
+        //            newLogLines.Add(line);
+        //        }
+        //    }
+
+        //    // Only add new lines to the grid
+        //    if (newLogLines.Count > allLogLines.Count)
+        //    {
+        //        var addedLines = newLogLines.Skip(allLogLines.Count);
+        //        foreach (var line in addedLines)
+        //        {
+        //            var entry = ParseLogLine(line);
+        //            if (entry != null)
+        //            {
+        //                var (type, timestamp, source, message) = entry.Value;
+        //                logGridView.Rows.Add(type, timestamp, source, message);
+        //            }
+        //        }
+        //        allLogLines = newLogLines;
+        //    }
+
+        //    lastLogFileLength = fileInfo.Length;
+        //}
 
         /// <summary>
         /// Requests the log file path via an eventBus message.
@@ -1316,6 +1562,9 @@ namespace Carebed.UI
             if (_alertHandlerActuatorError != null) _eventBus.Unsubscribe(_alertHandlerActuatorError);
 
             if (_alertClearAckHandler != null) _eventBus.Unsubscribe(_alertClearAckHandler);
+
+            // Unsubscribe from global messages
+            if (_globalLogHandler != null) _eventBus.UnsubscribeFromGlobalMessages(_globalLogHandler);
 
             base.OnFormClosed(e);
         }
