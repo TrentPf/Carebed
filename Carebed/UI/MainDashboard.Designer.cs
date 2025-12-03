@@ -53,12 +53,12 @@ namespace Carebed.UI
         private Action<MessageEnvelope<AlertActionMessage<ActuatorErrorMessage>>>? _alertHandlerActuatorError;
 
         // Sensor grid for displaying telemetry data
-        private DataGridView sensorGridView;
+        //private DataGridView sensorGridView;
         private Dictionary<string, DataGridViewRow> sensorRows = new();
 
         // Charting UI for sensor values over time
-        private Chart sensorChart; // <-- new chart field
-        private SplitContainer splitContainerSensors; // <-- split container to host grid + chart
+        //private Chart sensorChart; // <-- new chart field
+        //private SplitContainer splitContainerSensors; // <-- split container to host grid + chart
         private Dictionary<string, Series> sensorSeries = new(); // map sensor id -> chart series
         private readonly int ChartMaxPoints = 120; // keep last N points per series
 
@@ -77,6 +77,8 @@ namespace Carebed.UI
         #endregion
 
         #region Windows Forms Elements
+
+        private Color AppColour = Color.Ivory;
 
         #region Alert Banner
 
@@ -142,7 +144,7 @@ namespace Carebed.UI
         private ComboBox logTypeFilterComboBox;
         private Label logTypeFilterLabel;
         private List<string> allLogLines = new();
-        private string currentLogTypeFilter = "All";
+        //private string currentLogTypeFilter = "All";
         private FlowLayoutPanel logButtonPanel; // Add this field
         private Guid? selectedMessageId = null;
         private const int MaxLogMessages = 1000; // Set your desired limit
@@ -299,6 +301,11 @@ namespace Carebed.UI
 
             // Log type filter change handler
             logTypeFilterComboBox.SelectedIndexChanged += LogTypeFilterComboBox_SelectedIndexChanged;
+
+            // Start the application on the Vitals tab by showing the sensor grid immediately.
+            // This makes the Vitals view visible when the form first appears.
+            ShowSensorGrid();
+
         }
 
         #endregion
@@ -724,8 +731,8 @@ namespace Carebed.UI
                 ReadOnly = true,
                 AllowUserToAddRows = false,
                 AllowUserToDeleteRows = false,
-                // Turn off "Fill" so columns can exceed the viewport and produce a horizontal scrollbar
-                AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.None,
+                // Use Fill mode so one column can take remaining space
+                AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
                 BackgroundColor = Color.Black,
                 ForeColor = Color.LightGreen,
                 ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.AutoSize,
@@ -735,13 +742,13 @@ namespace Carebed.UI
                     ForeColor = Color.LightGreen,
                     SelectionBackColor = Color.DarkGreen,
                     SelectionForeColor = Color.White,
-                    WrapMode = DataGridViewTriState.False // prevent wrapping so horizontal scroll appears
+                    WrapMode = DataGridViewTriState.False // prevent wrapping so horizontal scroll appears when needed
                 },
                 ColumnHeadersDefaultCellStyle = new DataGridViewCellStyle
                 {
                     WrapMode = DataGridViewTriState.False
                 },
-                ScrollBars = ScrollBars.Both, // allow horizontal scrollbar
+                ScrollBars = ScrollBars.Both, // allow horizontal scrollbar when needed (min widths respected)
                 MultiSelect = false
             };
 
@@ -753,15 +760,24 @@ namespace Carebed.UI
             logGridView.Columns.Add("Message", "Message");
             logGridView.Columns["MessageId"].Visible = false;
 
-            // Fixed / preferred widths (adjust Message width as needed)
-            logGridView.Columns["Timestamp"].Width = 160;
+            // Configure preferred fixed widths and minimums for the non-message columns.
+            // The Message column will be set to Fill so it expands to consume remaining space.
+            logGridView.Columns["Timestamp"].AutoSizeMode = DataGridViewAutoSizeColumnMode.None;
+            logGridView.Columns["Timestamp"].Width = 180;
             logGridView.Columns["Timestamp"].MinimumWidth = 120;
-            logGridView.Columns["Source"].Width = 160;
+
+            logGridView.Columns["Source"].AutoSizeMode = DataGridViewAutoSizeColumnMode.None;
+            logGridView.Columns["Source"].Width = 150;
             logGridView.Columns["Source"].MinimumWidth = 140;
+
+            logGridView.Columns["Type"].AutoSizeMode = DataGridViewAutoSizeColumnMode.None;
             logGridView.Columns["Type"].Width = 120;
             logGridView.Columns["Type"].MinimumWidth = 100;
-            logGridView.Columns["Message"].Width = 800; // wider so horizontal scroll appears when viewport smaller
+
+            // Message column should expand to fill remaining space
+            logGridView.Columns["Message"].AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
             logGridView.Columns["Message"].MinimumWidth = 300;
+            logGridView.Columns["Message"].FillWeight = 200f; // give it higher weight so it dominates available space
 
             // build toolbar controls but DO NOT add them to any parent here
             logTypeFilterComboBox = new ComboBox
@@ -1337,7 +1353,7 @@ namespace Carebed.UI
         {
             //logFileTimer.Stop(); // Stop log updates
             ShowSensorGrid();
-            mainViewportPanel.BackColor = Color.LightSkyBlue; // Example color for Vitals
+            //mainViewportPanel.BackColor = Color.LightSkyBlue; // Example color for Vitals
 
             logsTabActive = false;
             if (scrollToLatestButton != null && scrollToLatestButton.Visible)
@@ -1386,7 +1402,7 @@ namespace Carebed.UI
                 }
 
                 // Reset panel background so previous page color doesn't bleed through
-                mainViewportPanel.BackColor = Color.White;
+                mainViewportPanel.BackColor = AppColour;
                 // Optional: ensure layout background matches parent so no transparency shows
                 viewportLayout.BackColor = Color.Transparent; // or Color.White if you prefer
 
@@ -1443,7 +1459,7 @@ namespace Carebed.UI
             var settingsPanel = new Panel
             {
                 Dock = DockStyle.Fill,
-                BackColor = Color.Transparent
+                BackColor = Color.Gray
             };
 
             // Title
@@ -2022,7 +2038,7 @@ namespace Carebed.UI
             }));
 
             // Reset background to the Vitals color
-            mainViewportPanel.BackColor = Color.LightSkyBlue;
+            mainViewportPanel.BackColor = AppColour;
 
             logsTabActive = false;
             if (scrollToLatestButton != null && scrollToLatestButton.Visible)
@@ -2446,7 +2462,7 @@ namespace Carebed.UI
 
             // Configure the main form
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
-            this.ClientSize = new System.Drawing.Size(1200, 800);
+            this.ClientSize = new System.Drawing.Size(1920, 1080);
             this.Text = "Carebed Dashboard";
         }
 
