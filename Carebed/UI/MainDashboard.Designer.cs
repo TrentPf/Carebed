@@ -51,9 +51,30 @@ namespace Carebed.UI
         private Action<MessageEnvelope<AlertActionMessage<ActuatorStatusMessage>>>? _alertHandlerActuatorStatus;
         private Action<MessageEnvelope<AlertActionMessage<ActuatorErrorMessage>>>? _alertHandlerActuatorError;
 
+        // Actuator inventory / status handlers (non-alert messages)
+        private Action<MessageEnvelope<ActuatorInventoryMessage>>? _actuatorInventoryHandler;
+        private Action<MessageEnvelope<ActuatorStatusMessage>>? _actuatorStatusHandler;
+        private Action<MessageEnvelope<ActuatorTelemetryMessage>>? _actuatorTelemetryHandler;
+
+        // Stores discovered actuators (id -> type)
+        private readonly Dictionary<string, ActuatorTypes> _availableActuators = new();
+        // UI state for actuators tab
+        private bool actuatorsTabActive = false;
+
+        // Map actuator id -> status label so status updates can be reflected
+        private readonly Dictionary<string, Label> actuatorStatusLabels = new();
+        // Map actuator id -> toggle button (for binary actuators like lamp)
+        private readonly Dictionary<string, Button> actuatorToggleButtons = new();
+
+        // Cache last-known actuator states so UI can be initialized correctly when rebuilding the panel
+        private readonly Dictionary<string, ActuatorStates> _actuatorStates = new();
+
         // Sensor grid for displaying telemetry data
         private DataGridView sensorGridView;
         private Dictionary<string, DataGridViewRow> sensorRows = new();
+
+        // Panel that will host actuators UI when Actuators tab is active
+        private Panel actuatorsPanel;
 
         // Alert Clear Ack handler
         private Action<MessageEnvelope<AlertClearAckMessage>>? _alertClearAckHandler;
@@ -188,6 +209,11 @@ namespace Carebed.UI
             InitializeSensorGrid();
             InitializeLogViewer();
 
+            // Subscribe to actuator inventory/status/telemetry early so we don't miss initial inventory messages
+            _eventBus.Subscribe<ActuatorInventoryMessage>(HandleActuatorInventory);
+            _eventBus.Subscribe<ActuatorStatusMessage>(HandleActuatorStatus);
+            _eventBus.Subscribe<ActuatorTelemetryMessage>(HandleActuatorTelemetry);
+
             // Setup the Alert Banner click event handlers
             AttachAlertBannerClickHandlers(alertBanner);
 
@@ -245,7 +271,7 @@ namespace Carebed.UI
             _eventBus.Subscribe(_alertHandlerSensorStatus);
             _eventBus.Subscribe(_alertHandlerSensorError);
 
-            // Register actuator handlers with event bus
+            // Register actuator handlers with event bus (alerts)
             _eventBus.Subscribe(_alertHandlerActuatorTelemetry);
             _eventBus.Subscribe(_alertHandlerActuatorStatus);
             _eventBus.Subscribe(_alertHandlerActuatorError);
@@ -288,6 +314,8 @@ namespace Carebed.UI
 
             // Log type filter change handler
             logTypeFilterComboBox.SelectedIndexChanged += LogTypeFilterComboBox_SelectedIndexChanged;
+
+            // NOTE: actuator inventory/status/telemetry subscriptions moved to constructor to avoid missing initial messages
         }
 
         #endregion
@@ -1274,18 +1302,54 @@ namespace Carebed.UI
 
         /// <summary>
         /// Handles the click event for the "Actuators" tab button.
+        /// The actuators UI is only populated when this tab is clicked.
         /// </summary>
         /// <param name="sender"></param>
         /// <param name="e"></param>
         private void ActuatorsTabButton_Click(object? sender, EventArgs e)
         {
-            //logFileTimer.Stop();
-            HideSensorGrid();
-            mainViewportPanel.BackColor = Color.LightGreen; // Example color for Actuators
+            // Ensure viewportLayout is parented inside mainViewportPanel.
+            if (!mainViewportPanel.Controls.Contains(viewportLayout))
+            {
+                mainViewportPanel.Controls.Clear();
+                viewportLayout.Dock = DockStyle.Fill;
+                mainViewportPanel.Controls.Add(viewportLayout);
+            }
 
+            // Clear any existing content and prepare actuators view
+            viewportLayout.Controls.Clear();
+
+            // Create actuatorsPanel if needed
+            if (actuatorsPanel == null)
+            {
+                actuatorsPanel = new Panel
+                {
+                    Dock = DockStyle.Fill,
+                    AutoScroll = true,
+                    BackColor = Color.Transparent,
+                    Padding = new Padding(8)
+                };
+            }
+            else
+            {
+                actuatorsPanel.Controls.Clear();
+            }
+
+            // Add the actuatorsPanel to the viewport
+            viewportLayout.Controls.Add(actuatorsPanel, 0, 1);
+
+            // Mark tab active so handlers will update UI
+            actuatorsTabActive = true;
+
+            // Build UI from known actuators (populated via ActuatorInventoryMessage)
+            PopulateActuatorsPanel();
+
+            mainViewportPanel.BackColor = Color.White;
             logsTabActive = false;
             if (scrollToLatestButton != null && scrollToLatestButton.Visible)
                 scrollToLatestButton.Visible = false;
+
+            EnsureDockingOrder();
         }
 
         /// <summary>
@@ -1692,6 +1756,244 @@ namespace Carebed.UI
         }
 
         /// <summary>
+        /// Handles the reception of actuator telemetry data - updates the actuator UI when visible.
+        /// </summary>
+        private void HandleActuatorTelemetry(MessageEnvelope<ActuatorTelemetryMessage> envelope)
+        {
+            var msg = envelope.Payload;
+            if (msg == null) return;
+
+            RunOnUiThread(() =>
+            {
+                if (!actuatorsTabActive || actuatorsPanel == null) return;
+
+                string actuatorId = msg.ActuatorId ?? string.Empty;
+
+                // Determine an inferred state from telemetry (Watts or Position)
+                if (!string.IsNullOrEmpty(actuatorId))
+                {
+                    ActuatorStates inferred = ActuatorStates.Off;
+                    if (msg.Watts.HasValue && msg.Watts.Value > 0.1)
+                        inferred = ActuatorStates.On;
+                    else if (msg.Position != null)
+                        inferred = ActuatorStates.On; // assume presence of position indicates engaged
+
+                    _actuatorStates[actuatorId] = inferred;
+                }
+
+                if (actuatorStatusLabels.TryGetValue(actuatorId, out var statusLabel))
+                {
+                    if (msg.Temperature.HasValue)
+                    {
+                        statusLabel.Text = $"Temp: {msg.Temperature.Value:F1}°C";
+                        statusLabel.ForeColor = msg.IsCritical ? Color.Red : Color.Black;
+                    }
+                    else if (msg.Watts.HasValue)
+                    {
+                        bool isOn = msg.Watts.Value > 0.1;
+                        statusLabel.Text = isOn ? "On" : "Off";
+                        statusLabel.ForeColor = isOn ? Color.LimeGreen : Color.Gray;
+                    }
+                    else if (msg.Position != null)
+                    {
+                        statusLabel.Text = msg.Position.ToString();
+                        statusLabel.ForeColor = Color.Black;
+                    }
+                }
+
+                if (actuatorToggleButtons.TryGetValue(actuatorId, out var btn))
+                {
+                    bool isOn = msg.Watts.HasValue ? msg.Watts.Value > 0.1 : (msg.Position != null);
+                    btn.Text = isOn ? "Turn Off" : "Turn On";
+                    btn.BackColor = isOn ? Color.LightCoral : Color.LightGreen;
+                    btn.ForeColor = Color.Black;
+                }
+            });
+        }
+
+        /// <summary>
+        /// Handles the reception of actuator status messages - updates the actuator status labels.
+        /// </summary>
+        private void HandleActuatorStatus(MessageEnvelope<ActuatorStatusMessage> envelope)
+        {
+            var msg = envelope.Payload;
+            if (msg == null) return;
+
+            RunOnUiThread(() =>
+            {
+                if (!actuatorsTabActive || actuatorsPanel == null) return;
+
+                string actuatorId = msg.ActuatorId ?? string.Empty;
+                if (!string.IsNullOrEmpty(actuatorId))
+                    _actuatorStates[actuatorId] = msg.CurrentState;
+
+                if (actuatorStatusLabels.TryGetValue(actuatorId, out var statusLabel))
+                {
+                    statusLabel.Text = msg.CurrentState.ToString();
+                    statusLabel.ForeColor = msg.CurrentState == ActuatorStates.On || msg.CurrentState == ActuatorStates.Completed
+                        ? Color.LimeGreen : (msg.CurrentState == ActuatorStates.Error ? Color.Red : Color.Gray);
+                }
+
+                if (actuatorToggleButtons.TryGetValue(actuatorId, out var btn))
+                {
+                    bool isOn = msg.CurrentState == ActuatorStates.On;
+                    btn.Text = isOn ? "Turn Off" : "Turn On";
+                    btn.BackColor = isOn ? Color.LightCoral : Color.LightGreen;
+                    btn.ForeColor = Color.Black;
+                }
+            });
+        }
+
+        /// <summary>
+        /// Handles reception of actuator inventory messages - updates known actuators and optionally UI.
+        /// </summary>
+        private void HandleActuatorInventory(MessageEnvelope<ActuatorInventoryMessage> envelope)
+        {
+            var msg = envelope.Payload;
+            if (msg == null) return;
+
+            RunOnUiThread(() =>
+            {
+                // Merge metadata if present
+                if (msg.Metadata != null)
+                {
+                    foreach (var kv in msg.Metadata)
+                    {
+                        if (Enum.TryParse<ActuatorTypes>(kv.Value, out var t))
+                            _availableActuators[kv.Key] = t;
+                        else
+                            _availableActuators[kv.Key] = ActuatorTypes.Custom;
+                    }
+                }
+
+                // Merge explicit actuators list if provided
+                if (msg.Actuators != null && msg.Actuators.Count > 0)
+                {
+                    foreach (var a in msg.Actuators)
+                    {
+                        if (!string.IsNullOrWhiteSpace(a.ActuatorId))
+                            _availableActuators[a.ActuatorId] = a.Type;
+                    }
+                }
+
+                if (actuatorsTabActive)
+                    PopulateActuatorsPanel();
+            });
+        }
+
+        /// <summary>
+        /// Build or refresh the actuatorsPanel controls from _availableActuators.
+        /// </summary>
+        private void PopulateActuatorsPanel()
+        {
+            if (actuatorsPanel == null) return;
+
+            actuatorsPanel.Controls.Clear();
+            actuatorStatusLabels.Clear();
+            actuatorToggleButtons.Clear();
+
+            foreach (var kv in _availableActuators)
+            {
+                string actuatorId = kv.Key;
+                ActuatorTypes type = kv.Value;
+
+                var statusLabel = new Label
+                {
+                    Text = "Off",
+                    Name = $"StatusLabel_{actuatorId}",
+                    AutoSize = true,
+                    Width = 120,
+                    TextAlign = ContentAlignment.MiddleLeft,
+                    ForeColor = Color.Black,
+                    Margin = new Padding(8, 6, 8, 6)
+                };
+                actuatorStatusLabels[actuatorId] = statusLabel;
+
+                var toggleButton = new Button
+                {
+                    Text = "Turn On",
+                    Name = $"ToggleButton_{actuatorId}",
+                    AutoSize = true,
+                    Margin = new Padding(4)
+                };
+                toggleButton.Click += (s, e) => ToggleActuatorState(actuatorId, toggleButton);
+                actuatorToggleButtons[actuatorId] = toggleButton;
+
+                // Initialize UI from cached state if available
+                if (_actuatorStates.TryGetValue(actuatorId, out var knownState))
+                {
+                    // set status label
+                    statusLabel.Text = knownState.ToString();
+                    statusLabel.ForeColor = (knownState == ActuatorStates.On || knownState == ActuatorStates.Completed)
+                        ? Color.LimeGreen : (knownState == ActuatorStates.Error ? Color.Red : Color.Gray);
+
+                    // set button
+                    bool isOn = knownState == ActuatorStates.On;
+                    toggleButton.Text = isOn ? "Turn Off" : "Turn On";
+                    toggleButton.BackColor = isOn ? Color.LightCoral : Color.LightGreen;
+                    toggleButton.ForeColor = Color.Black;
+                }
+
+                var actuatorPanelRow = new FlowLayoutPanel
+                {
+                    Dock = DockStyle.Top,
+                    AutoSize = true,
+                    FlowDirection = FlowDirection.LeftToRight,
+                    WrapContents = false,
+                    Margin = new Padding(0, 4, 0, 4)
+                };
+
+                actuatorPanelRow.Controls.Add(new Label
+                {
+                    Text = actuatorId,
+                    Width = 220,
+                    TextAlign = ContentAlignment.MiddleLeft,
+                    ForeColor = Color.Black,
+                    Font = new Font("Segoe UI", 10, FontStyle.Bold),
+                    Margin = new Padding(0, 0, 8, 0)
+                });
+                actuatorPanelRow.Controls.Add(statusLabel);
+                actuatorPanelRow.Controls.Add(toggleButton);
+
+                actuatorsPanel.Controls.Add(actuatorPanelRow);
+            }
+
+            actuatorsPanel.Controls.Add(new Panel { Height = 18 });
+        }
+
+        /// <summary>
+        /// Toggle the state of an actuator and publish a command message.
+        /// </summary>
+        /// <param name="actuatorId"></param>
+        /// <param name="button"></param>
+        private void ToggleActuatorState(string actuatorId, Button button)
+        {
+            if (string.IsNullOrWhiteSpace(actuatorId) || button == null) return;
+
+            // Determine desired action from button text
+            bool currentlyOn = button.Text == "Turn Off";
+            ActuatorCommands cmd = currentlyOn ? ActuatorCommands.DeactivateLamp : ActuatorCommands.ActivateLamp;
+
+            // Update UI immediately for responsiveness
+            button.Text = currentlyOn ? "Turn On" : "Turn Off";
+            button.BackColor = currentlyOn ? Color.LightGreen : Color.LightCoral;
+
+            // Update cached state immediately so rebuilding UI keeps the expected state
+            _actuatorStates[actuatorId] = currentlyOn ? ActuatorStates.Off : ActuatorStates.On;
+
+            // Build command message
+            var command = new ActuatorCommandMessage
+            {
+                ActuatorId = actuatorId,
+                TypeOfActuator = _availableActuators.ContainsKey(actuatorId) ? _availableActuators[actuatorId] : ActuatorTypes.Custom,
+                CommandType = cmd
+            };
+
+            var envelope = new MessageEnvelope<ActuatorCommandMessage>(command, MessageOrigins.DisplayManager, MessageTypes.ActuatorCommand);
+            _ = _eventBus.PublishAsync(envelope);
+        }
+
+        /// <summary>
         /// Handles the click event for the "Pause Global Messages" button.
         /// </summary>
         /// <param name="sender"></param>
@@ -1747,7 +2049,6 @@ namespace Carebed.UI
                     MessageBoxButtons.OKCancel,
                     MessageBoxIcon.Information
                 );
-
                 if (result == DialogResult.OK)
                 {
                     RunOnUiThread(() => RemoveAlertListViewItemAndUpdate(item));
@@ -2257,6 +2558,11 @@ namespace Carebed.UI
             if (_alertHandlerActuatorTelemetry != null) _eventBus.Unsubscribe(_alertHandlerActuatorTelemetry);
             if (_alertHandlerActuatorStatus != null) _eventBus.Unsubscribe(_alertHandlerActuatorStatus);
             if (_alertHandlerActuatorError != null) _eventBus.Unsubscribe(_alertHandlerActuatorError);
+
+            // Unsubscribe actuator specific message handlers
+            _eventBus.Unsubscribe<ActuatorInventoryMessage>(HandleActuatorInventory);
+            _eventBus.Unsubscribe<ActuatorStatusMessage>(HandleActuatorStatus);
+            _eventBus.Unsubscribe<ActuatorTelemetryMessage>(HandleActuatorTelemetry);
 
             if (_alertClearAckHandler != null) _eventBus.Unsubscribe(_alertClearAckHandler);
 

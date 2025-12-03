@@ -58,6 +58,13 @@ namespace Carebed.Infrastructure
             // Instantiate the MainDashboard, pass sensorManager and alertManager so UI controls their lifecycles
             var dashboard = new MainDashboard(_eventBus);
 
+            // Re-emit actuator inventory after dashboard has subscribed so UI receives it
+            try
+            {
+                actuatorManager.EmitActuatorInventoryMessage();
+            }
+            catch { }
+
             // Start managers
             foreach (var manager in managers)
             {

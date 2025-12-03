@@ -33,11 +33,11 @@ namespace Carebed.Models.Actuators
         /// <summary>
         /// Constructor for the ActuatorBase class.
         /// </summary>
-        protected ActuatorBase(string actuatorId, ActuatorTypes type, Dictionary<ActuatorStates, ActuatorStates[]> transitionMap)
+        protected ActuatorBase(string actuatorId, ActuatorTypes type, Dictionary<ActuatorStates, ActuatorStates[]> transitionMap, ActuatorStates initialState = ActuatorStates.Idle)
         {
             ActuatorId = actuatorId;
             Type = type;
-            _stateMachine = new StateMachine<ActuatorStates>(ActuatorStates.Idle, transitionMap);
+            _stateMachine = new StateMachine<ActuatorStates>(initialState, transitionMap);
         }
 
         /// <summary>

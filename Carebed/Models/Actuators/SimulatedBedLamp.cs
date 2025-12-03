@@ -16,7 +16,7 @@ namespace Carebed.Models.Actuators
         #endregion
 
         #region Constructor(s)
-        public SimulatedBedLamp(string actuatorId): base(actuatorId, ActuatorTypes.Lamp, GetTransitionMap())
+        public SimulatedBedLamp(string actuatorId): base(actuatorId, ActuatorTypes.Lamp, GetTransitionMap(), ActuatorStates.Off)
         {
         }
 
