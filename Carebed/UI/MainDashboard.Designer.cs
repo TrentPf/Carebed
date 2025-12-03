@@ -1,18 +1,19 @@
 ﻿using Carebed.Infrastructure.Enums;
 using Carebed.Infrastructure.EventBus;
+using Carebed.Infrastructure.Message;
+using Carebed.Infrastructure.Message.Actuator;
 using Carebed.Infrastructure.Message.ActuatorMessages;
+using Carebed.Infrastructure.Message.AlertMessages;
+using Carebed.Infrastructure.Message.LoggerMessages;
 using Carebed.Infrastructure.Message.SensorMessages;
+using Carebed.Infrastructure.Message.UI;
 using Carebed.Infrastructure.MessageEnvelope;
 using Carebed.Managers;
 using Carebed.Models.Sensors;
-using Carebed.Infrastructure.Message.AlertMessages;
-using Carebed.Infrastructure.Message.Actuator;
 using System.Collections.Generic;
 using System.Linq;
 using System.Windows.Forms;
-using Carebed.Infrastructure.Message.UI;
-using Carebed.Infrastructure.Message;
-using Carebed.Infrastructure.Message.LoggerMessages;
+using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace Carebed.UI
 {
@@ -148,13 +149,29 @@ namespace Carebed.UI
         private bool globalMessagesPaused = false;
         #endregion
 
-        // Add near other fields
         private TableLayoutPanel rootLayout;
         private TableLayoutPanel viewportLayout;
+
+        #region Settings Page Elements
+
+        private class PendingPollingRequest
+        {
+            public int RequestedSeconds { get; init; }
+            public System.Timers.Timer TimeoutTimer { get; init; }
+        }
+
+        private int appliedPollingSeconds = 1; // current applied baseline (UI authoritative until ack)
+        private NumericUpDown? settingsPollingInput;      // reference to control created in Settings view
+        private Button? settingsSaveButton;               // reference to Apply button
+        private Label? settingsPollingStatusLabel;        // status label shown while waiting for ack
+        private readonly Dictionary<Guid, PendingPollingRequest> _pendingPollingRequests = new();
+        private const int PollingRequestTimeoutMs = 5000; // 5s timeout (tweak as needed)
+        #endregion
 
         #endregion
 
         #region Constructor(s)
+
 
         /// <summary>
         /// Constructor for MainDashboard that accepts an IEventBus instance.
@@ -174,13 +191,108 @@ namespace Carebed.UI
             // Setup the Alert Banner click event handlers
             AttachAlertBannerClickHandlers(alertBanner);
 
-            // Build a deterministic root layout (TableLayoutPanel) so the main viewport
-            // cannot expand underneath the alert log. This avoids fragile SetChildIndex logic.
+            // Build the root layout - used to fix docking/order issues
             BuildRootLayout();
 
             // Keep EnsureDockingOrder for safety during migration (no-op now)
-            EnsureDockingOrder();
+            //EnsureDockingOrder();
         }
+
+        /// <summary>
+        /// A override for the OnLoad event to perform additional initialization.
+        /// </summary>
+        /// <remarks> Can be used to subscribe to events or perform other setup tasks. </remarks>
+        /// <param name="e"></param>
+        protected override void OnLoad(EventArgs e)
+        {
+            base.OnLoad(e);
+
+            // Bind the label text to AlertMessage.Text
+            AlertViewModel emptyBinding = new AlertViewModel()
+            {
+                AlertText = "",
+                IsCritical = false
+            };
+
+            // Setup data binding for alert banner
+            alertBindingSource.DataSource = alertViewModel;
+            alertLabel.DataBindings.Add("Text", alertBindingSource, "AlertText");
+
+            // Sensor message handlers
+            _alertHandlerSensorTelemetry = HandleAlertActionForSensor<SensorTelemetryMessage>;
+            _alertHandlerSensorStatus = HandleAlertActionForSensor<SensorStatusMessage>;
+            _alertHandlerSensorError = HandleAlertActionForSensor<SensorErrorMessage>;
+
+            // Actuator message handlers
+            _alertHandlerActuatorTelemetry = HandleAlertActionForActuator<ActuatorTelemetryMessage>;
+            _alertHandlerActuatorStatus = HandleAlertActionForActuator<ActuatorStatusMessage>;
+            _alertHandlerActuatorError = HandleAlertActionForActuator<ActuatorErrorMessage>;
+
+            // Register alert clear ack event handler
+            _alertClearAckHandler = OnAlertClearAck;
+
+            // Register logger command ack handler
+            _loggerCommandAckHandler = OnLoggerCommandAck;
+
+            // Register sensor command ack handler
+            _sensorCommandAckHandler = OnSensorCommandAck;
+
+            // Register global log message handler
+            _globalLogHandler = OnGlobalLogMessage;
+
+            // Register sensor handlers with event bus
+            _eventBus.Subscribe(_alertHandlerSensorTelemetry);
+            _eventBus.Subscribe(_alertHandlerSensorStatus);
+            _eventBus.Subscribe(_alertHandlerSensorError);
+
+            // Register actuator handlers with event bus
+            _eventBus.Subscribe(_alertHandlerActuatorTelemetry);
+            _eventBus.Subscribe(_alertHandlerActuatorStatus);
+            _eventBus.Subscribe(_alertHandlerActuatorError);
+
+            // Subscribe to sensor telemetry for the grid
+            _eventBus.Subscribe<SensorTelemetryMessage>(HandleSensorTelemetry);
+
+            // Register sensor command ack handler with event bus
+            _eventBus.Subscribe(_sensorCommandAckHandler);
+
+            // Register alert clear ack handler with event bus
+            _eventBus.Subscribe(_alertClearAckHandler);
+
+            // Register the logger ack message handler with event bus
+            _eventBus.Subscribe(_loggerCommandAckHandler);
+
+            // Register to the global messages so we can log them
+            _eventBus.SubscribeToGlobalMessages(_globalLogHandler);
+
+            // Attach tab button click handlers
+            vitalsTabButton.Click += VitalsTabButton_Click;
+            actuatorsTabButton.Click += ActuatorsTabButton_Click;
+            logsTabButton.Click += LogsTabButton_Click;
+            settingsTabButton.Click += SettingsTabButton_Click;
+
+            // Log viewer event handlers
+            logGridView.CellDoubleClick += LogGridView_CellDoubleClick;
+            logGridView.SelectionChanged += LogGridView_SelectionChanged;
+
+            // new subscriptions for scroll/join-to-latest behavior
+            logGridView.Scroll += LogGridView_Scrolled;
+            logGridView.RowsAdded += LogGridView_RowsAdded;
+
+            // Subscribe to single-click selection
+            alertListView.MouseUp += AlertListView_MouseUp;
+
+            // Log viewer event handlers
+            logGridView.CellDoubleClick += LogGridView_CellDoubleClick;
+            logGridView.SelectionChanged += LogGridView_SelectionChanged;
+
+            // Log type filter change handler
+            logTypeFilterComboBox.SelectedIndexChanged += LogTypeFilterComboBox_SelectedIndexChanged;
+        }
+
+        #endregion
+
+        #region Initialize UI Components
 
         /// <summary>
         /// Setup the alert banner UI components.
@@ -213,7 +325,7 @@ namespace Carebed.UI
                 Dock = DockStyle.Fill,
                 ForeColor = Color.WhiteSmoke,
                 AutoSize = false
-              
+
             };
             alertBannerSourceTitle = new Label
             {
@@ -577,7 +689,7 @@ namespace Carebed.UI
                 Margin = new Padding(8)
             };
             scrollToLatestButton.FlatAppearance.BorderSize = 0;
-            scrollToLatestButton.Click += ScrollToLatestButton_Click;
+            scrollToLatestButton.Click += LogViewScrollToLatestButton_Click;
 
             // Add the floating button directly into the main viewport (so it overlays the grid).
             // We'll reposition on resize so it stays in the bottom-center.
@@ -590,6 +702,9 @@ namespace Carebed.UI
             this.Controls.Add(mainViewportPanel);
         }
 
+        /// <summary>
+        /// Setup the log viewer UI components.
+        /// </summary>
         private void InitializeLogViewer()
         {
             logGridView = new DataGridView
@@ -598,7 +713,8 @@ namespace Carebed.UI
                 ReadOnly = true,
                 AllowUserToAddRows = false,
                 AllowUserToDeleteRows = false,
-                AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
+                // Turn off "Fill" so columns can exceed the viewport and produce a horizontal scrollbar
+                AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.None,
                 BackgroundColor = Color.Black,
                 ForeColor = Color.LightGreen,
                 ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.AutoSize,
@@ -607,8 +723,15 @@ namespace Carebed.UI
                     BackColor = Color.Black,
                     ForeColor = Color.LightGreen,
                     SelectionBackColor = Color.DarkGreen,
-                    SelectionForeColor = Color.White
-                }
+                    SelectionForeColor = Color.White,
+                    WrapMode = DataGridViewTriState.False // prevent wrapping so horizontal scroll appears
+                },
+                ColumnHeadersDefaultCellStyle = new DataGridViewCellStyle
+                {
+                    WrapMode = DataGridViewTriState.False
+                },
+                ScrollBars = ScrollBars.Both, // allow horizontal scrollbar
+                MultiSelect = false
             };
 
             // Columns
@@ -619,14 +742,14 @@ namespace Carebed.UI
             logGridView.Columns.Add("Message", "Message");
             logGridView.Columns["MessageId"].Visible = false;
 
-            // sizing
-            logGridView.Columns["Timestamp"].FillWeight = 12f;
+            // Fixed / preferred widths (adjust Message width as needed)
+            logGridView.Columns["Timestamp"].Width = 160;
             logGridView.Columns["Timestamp"].MinimumWidth = 120;
-            logGridView.Columns["Source"].FillWeight = 15f;
+            logGridView.Columns["Source"].Width = 160;
             logGridView.Columns["Source"].MinimumWidth = 140;
-            logGridView.Columns["Type"].FillWeight = 10f;
+            logGridView.Columns["Type"].Width = 120;
             logGridView.Columns["Type"].MinimumWidth = 100;
-            logGridView.Columns["Message"].FillWeight = 63f;
+            logGridView.Columns["Message"].Width = 800; // wider so horizontal scroll appears when viewport smaller
             logGridView.Columns["Message"].MinimumWidth = 300;
 
             // build toolbar controls but DO NOT add them to any parent here
@@ -714,109 +837,48 @@ namespace Carebed.UI
         }
 
         /// <summary>
-        /// A override for the OnLoad event to perform additional initialization.
+        /// Initialize the sensor grid in the main viewport panel.
         /// </summary>
-        /// <remarks> Can be used to subscribe to events or perform other setup tasks. </remarks>
-        /// <param name="e"></param>
-        protected override void OnLoad(EventArgs e)
+        private void InitializeSensorGrid()
         {
-            base.OnLoad(e);
-
-            // Bind the label text to AlertMessage.Text
-            AlertViewModel emptyBinding = new AlertViewModel()
+            sensorGridView = new DataGridView
             {
-                AlertText = "",
-                IsCritical = false
+                Dock = DockStyle.Fill,
+                ReadOnly = true,
+                AllowUserToAddRows = false,
+                AllowUserToDeleteRows = false,
+                AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
+                ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.AutoSize,
+                BackgroundColor = Color.White
             };
-            
-            // Setup data binding for alert banner
-            alertBindingSource.DataSource = alertViewModel;
-            alertLabel.DataBindings.Add("Text", alertBindingSource, "AlertText");
-
-            // Sensor message handlers
-            _alertHandlerSensorTelemetry = HandleAlertActionForSensor<SensorTelemetryMessage>;
-            _alertHandlerSensorStatus = HandleAlertActionForSensor<SensorStatusMessage>;
-            _alertHandlerSensorError = HandleAlertActionForSensor<SensorErrorMessage>;
-
-            // Actuator message handlers
-            _alertHandlerActuatorTelemetry = HandleAlertActionForActuator<ActuatorTelemetryMessage>;
-            _alertHandlerActuatorStatus = HandleAlertActionForActuator<ActuatorStatusMessage>;
-            _alertHandlerActuatorError = HandleAlertActionForActuator<ActuatorErrorMessage>;
-
-            // Register alert clear ack event handler
-            _alertClearAckHandler = OnAlertClearAck;
-
-            // Register logger command ack handler
-            _loggerCommandAckHandler = OnLoggerCommandAck;
-
-            // Register sensor command ack handler
-            _sensorCommandAckHandler = OnSensorCommandAck;
-
-            // Register global log message handler
-            _globalLogHandler = OnGlobalLogMessage;
-
-            // Register sensor handlers with event bus
-            _eventBus.Subscribe(_alertHandlerSensorTelemetry);
-            _eventBus.Subscribe(_alertHandlerSensorStatus);
-            _eventBus.Subscribe(_alertHandlerSensorError);
-
-            // Register actuator handlers with event bus
-            _eventBus.Subscribe(_alertHandlerActuatorTelemetry);
-            _eventBus.Subscribe(_alertHandlerActuatorStatus);
-            _eventBus.Subscribe(_alertHandlerActuatorError);
-
-            // Subscribe to sensor telemetry for the grid
-            _eventBus.Subscribe<SensorTelemetryMessage>(HandleSensorTelemetry);
-
-            // Register alert clear ack handler with event bus
-            _eventBus.Subscribe(_alertClearAckHandler);
-
-            // Register the logger ack message handler with event bus
-            _eventBus.Subscribe(_loggerCommandAckHandler);
-
-            // Register to the global messages so we can log them
-            _eventBus.SubscribeToGlobalMessages(_globalLogHandler);
-
-            // Attach tab button click handlers
-            vitalsTabButton.Click += VitalsTabButton_Click;
-            actuatorsTabButton.Click += ActuatorsTabButton_Click;
-            logsTabButton.Click += LogsTabButton_Click;
-            settingsTabButton.Click += SettingsTabButton_Click;
-
-            // Log viewer event handlers
-            logGridView.CellDoubleClick += LogGridView_CellDoubleClick;
-            logGridView.SelectionChanged += logGridView_SelectionChanged;
-
-            // new subscriptions for scroll/join-to-latest behavior
-            logGridView.Scroll += LogGridView_Scrolled;
-            logGridView.RowsAdded += LogGridView_RowsAdded;
-
-            // Subscribe to single-click selection
-            alertListView.MouseUp += AlertListView_MouseUp;
-
-          
-
-            // Log viewer event handlers
-            logGridView.CellDoubleClick += LogGridView_CellDoubleClick;
-            //applyLogFilterButton.Click += ApplyLogFilterButton_Click;
-            //showLogFileButton.Click += (s, e) => ShowLogFile();
-            //refreshLogFileButton.Click += (s, e) => RefreshLogFile();
-            logGridView.SelectionChanged += logGridView_SelectionChanged;
-
-            logTypeFilterComboBox.SelectedIndexChanged += LogTypeFilterComboBox_SelectedIndexChanged;
+            sensorGridView.Columns.Add("SensorID", "Sensor ID");
+            sensorGridView.Columns.Add("Type", "Type");
+            sensorGridView.Columns.Add("Value", "Value");
+            sensorGridView.Columns.Add("IsCritical", "Critical");
+            sensorGridView.Columns.Add("Timestamp", "Timestamp");
         }
 
+        #endregion       
+
+        #region Event Handlers
+
+        /// <summary>
+        /// Handles selection changes in the log type filter combo box to apply the selected filter.
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
         private void LogTypeFilterComboBox_SelectedIndexChanged(object? sender, EventArgs e)
         {
 
             ApplyLogFilter();
         }
 
-        #endregion
-
-        #region Event Handlers
-
-        private void ScrollToLatestButton_Click(object? sender, EventArgs e)
+        /// <summary>
+        /// Handles clicks on the "Scroll to Latest" button to jump to the most recent log message.
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
+        private void LogViewScrollToLatestButton_Click(object? sender, EventArgs e)
         {
             if (logGridView.Rows.Count == 0) return;
 
@@ -838,17 +900,32 @@ namespace Carebed.UI
             if (footerPanel != null) footerPanel.Visible = false;
         }
 
+        /// <summary>
+        /// Handles scrolling events in the log grid view to update the visibility of the scroll button.
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
         private void LogGridView_Scrolled(object? sender, ScrollEventArgs e)
         {
             UpdateScrollButtonVisibility();
         }
 
+        /// <summary>
+        ///  Handles when new rows are added to the log grid view.
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
         private void LogGridView_RowsAdded(object? sender, DataGridViewRowsAddedEventArgs e)
         {
             // New rows arrived — update the footer/button visibility.
             UpdateScrollButtonVisibility();
         }
 
+        /// <summary>
+        /// Handles double-clicks on log grid view cells to show detailed message info.
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
         private void LogGridView_CellDoubleClick(object? sender, DataGridViewCellEventArgs e)
         {
             if (e.RowIndex < 0 || e.RowIndex >= logGridView.Rows.Count)
@@ -865,7 +942,12 @@ namespace Carebed.UI
             ShowAlertPopup(details, MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
 
-        private void logGridView_SelectionChanged(object? sender, EventArgs e)
+        /// <summary>
+        /// Handles selection changes in the log grid view to track the selected message ID.
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
+        private void LogGridView_SelectionChanged(object? sender, EventArgs e)
         {
             if (logGridView.SelectedRows.Count > 0)
             {
@@ -875,6 +957,10 @@ namespace Carebed.UI
             }
         }
 
+        /// <summary>
+        /// Handles global log messages to update the log viewer UI.
+        /// </summary>
+        /// <param name="envelope"></param>
         private void OnGlobalLogMessage(IMessageEnvelope envelope)
         {
             RunOnUiThread(() =>
@@ -900,18 +986,97 @@ namespace Carebed.UI
             });
         }
 
-        private void ApplyLogFilterButton_Click(object? sender, EventArgs e)
-        {
-            // Get the selected filter type from the ComboBox
-            currentLogTypeFilter = logTypeFilterComboBox.SelectedItem?.ToString() ?? "All";
-            ApplyLogFilter();
-        }
-
+        /// <summary>
+        /// Handles SensorCommandAckMessage messages to update the UI based on sensor command acknowledgments.
+        /// </summary>
         private void OnSensorCommandAck(MessageEnvelope<SensorCommandAckMessage> envelope)
         {
-            throw new NotImplementedException();
+            if (envelope?.Payload == null) return;
+
+            if (envelope.Payload.CommandType != SensorCommands.AdjustPollingRate) return;
+
+            bool ok = envelope.Payload.CommandExecutedSuccessfully;
+            var correlation = envelope.Payload.CorrelationId;
+
+            RunOnUiThread(() =>
+            {
+                if (correlation != Guid.Empty && _pendingPollingRequests.TryGetValue(correlation, out var pending))
+                {
+                    // cancel timeout timer
+                    try { pending.TimeoutTimer.Stop(); pending.TimeoutTimer.Dispose(); } catch { }
+
+                    _pendingPollingRequests.Remove(correlation);
+
+                    if (ok)
+                    {
+                        appliedPollingSeconds = pending.RequestedSeconds;
+
+                        if (settingsPollingStatusLabel != null)
+                            settingsPollingStatusLabel.Text = $"Polling Rate: {appliedPollingSeconds}s";
+
+                        if (settingsPollingInput != null)
+                            settingsPollingInput.Value = appliedPollingSeconds;
+
+                        if (settingsSaveButton != null)
+                        {
+                            settingsSaveButton.Enabled = false;
+                            settingsSaveButton.BackColor = Color.LightGray;
+                            settingsSaveButton.ForeColor = Color.DarkGray;
+                        }
+
+                        // update saveButton UI when value changes — compare to the live appliedPollingSeconds field,
+                        // not a captured local variable, so UI stays correct after ack/timeouts.
+                        settingsPollingInput.ValueChanged += (s, ev) =>
+                        {
+                            if (settingsPollingInput == null || settingsSaveButton == null) return;
+
+                            bool changed = (int)settingsPollingInput.Value != appliedPollingSeconds;
+                            settingsSaveButton.Enabled = changed;
+                            settingsSaveButton.BackColor = changed ? Color.DodgerBlue : Color.LightGray;
+                            settingsSaveButton.ForeColor = changed ? Color.White : Color.DarkGray;
+                        };
+
+                        MessageBox.Show("Polling rate updated successfully.", "Polling Rate", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    }
+                    else
+                    {
+                        if (settingsPollingStatusLabel != null)
+                            settingsPollingStatusLabel.Text = $"Failed to update polling rate: {envelope.Payload.Reason ?? "unknown"}";
+
+                        MessageBox.Show($"Failed to update polling rate: {envelope.Payload.Reason ?? "unknown reason"}",
+                            "Polling Rate", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+
+                        // allow retry: re-enable Save
+                        if (settingsSaveButton != null)
+                        {
+                            settingsSaveButton.Enabled = true;
+                            settingsSaveButton.BackColor = Color.DodgerBlue;
+                            settingsSaveButton.ForeColor = Color.White;
+                        }
+                    }
+                }
+                else
+                {
+                    // No pending request matched this ack — best-effort feedback
+                    if (ok)
+                    {
+                        // unknown correlation, but success: show generic message
+                        MessageBox.Show("Polling rate updated (ack received without matching request).", "Polling Rate", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                        if (settingsPollingStatusLabel != null)
+                            settingsPollingStatusLabel.Text = "Polling Rate updated";
+                    }
+                    else
+                    {
+                        MessageBox.Show($"Failed to update polling rate: {envelope.Payload.Reason ?? "unknown reason"}",
+                            "Polling Rate", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    }
+                }
+            });
         }
 
+        /// <summary>
+        /// Handles LoggerCommandAckMessage messages to update the UI based on logger command acknowledgments.
+        /// </summary>
         private void OnLoggerCommandAck(MessageEnvelope<LoggerCommandAckMessage> envelope)
         {
             // Use switch statement to handle the different command types
@@ -971,6 +1136,23 @@ namespace Carebed.UI
         }
 
         /// <summary>
+        /// Handles AlertClearAckMessage messages to update the UI based on alert clear acknowledgments.
+        /// </summary>
+        /// <param name="envelope"></param>
+        private void OnAlertClearAck(MessageEnvelope<AlertClearAckMessage> envelope)
+        {
+            Console.WriteLine("Received AlertClearAckMessage!!!!!");
+            // Only clear if ack is for all alerts and was successful
+            if (envelope.Payload != null && envelope.Payload.Source == "ALL" && envelope.Payload.alertCleared)
+            {
+                RunOnUiThread(() => {
+                    alertListView.Items.Clear();
+                    ShowAlert(new AlertViewModel { AlertText = "No active alerts", IsCritical = false, Source = "" });
+                });
+            }
+        }
+
+        /// <summary>
         /// Handler for when the user clicks the AlertBanner.
         /// </summary>
         private void AlertBanner_Click(object? sender, EventArgs e)
@@ -1005,19 +1187,6 @@ namespace Carebed.UI
                     }
                     break;
                 }
-            }
-        }
-
-        private void OnAlertClearAck(MessageEnvelope<AlertClearAckMessage> envelope)
-        {
-            Console.WriteLine("Received AlertClearAckMessage!!!!!");
-            // Only clear if ack is for all alerts and was successful
-            if (envelope.Payload != null && envelope.Payload.Source == "ALL" && envelope.Payload.alertCleared)
-            {
-                RunOnUiThread(() => {
-                    alertListView.Items.Clear();
-                    ShowAlert(new AlertViewModel { AlertText = "No active alerts", IsCritical = false, Source = "" });
-                });
             }
         }
 
@@ -1122,79 +1291,32 @@ namespace Carebed.UI
         /// <summary>
         /// Handles the click event for the "Logs" tab button.
         /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
-        //private void LogsTabButton_Click(object? sender, EventArgs e)
-        //{
-        //    HideSensorGrid();
-
-        //    RunOnUiThread(() =>
-        //    {
-        //        // Clear previous content from the viewport layout (not the whole main panel)
-        //        if (viewportLayout == null)
-        //        {
-        //            mainViewportPanel.Controls.Clear();
-        //        }
-        //        else
-        //        {
-        //            viewportLayout.Controls.Clear();
-        //        }
-
-        //        // Prepare toolbar (combo + buttons)
-        //        logButtonPanel.AutoSize = true;
-        //        logButtonPanel.Dock = DockStyle.Fill;
-
-        //        // Prepare the grid
-        //        logGridView.Dock = DockStyle.Fill;
-
-        //        // Add toolbar + grid + footer into the internal layout so sizing is deterministic.
-        //        if (viewportLayout != null)
-        //        {
-        //            viewportLayout.Controls.Add(logButtonPanel, 0, 0);
-        //            viewportLayout.Controls.Add(logGridView, 0, 1);
-
-        //            // add footer panel (it will be AutoSize and initially hidden)
-        //            viewportLayout.Controls.Add(footerPanel, 0, 2);
-        //            footerPanel.Visible = false; // start hidden
-        //        }
-        //        else
-        //        {
-        //            if (!mainViewportPanel.Controls.Contains(logButtonPanel))
-        //            {
-        //                logButtonPanel.Dock = DockStyle.Top;
-        //                mainViewportPanel.Controls.Add(logButtonPanel);
-        //            }
-        //            if (!mainViewportPanel.Controls.Contains(logGridView))
-        //            {
-        //                logGridView.Dock = DockStyle.Fill;
-        //                mainViewportPanel.Controls.Add(logGridView);
-        //            }
-        //        }
-
-        //        try { mainViewportPanel.BringToFront(); } catch { }
-        //        EnsureDockingOrder();
-        //    });
-
-        //    // Clear and reapply filter to populate the grid
-        //    logGridView.Rows.Clear();
-        //    ApplyLogFilter();
-        //}
-
         private void LogsTabButton_Click(object? sender, EventArgs e)
         {
             HideSensorGrid();
 
             RunOnUiThread(() =>
             {
-                // Clear previous content from the viewport layout (not the whole main panel)
-                if (viewportLayout == null)
+                // Ensure viewportLayout is present inside mainViewportPanel.
+                // If the Settings view cleared mainViewportPanel, viewportLayout field still exists
+                // but is not parented. Re-add it so children we add become visible.
+                if (!mainViewportPanel.Controls.Contains(viewportLayout))
                 {
+                    // Remove any stray controls then add the viewportLayout back.
                     mainViewportPanel.Controls.Clear();
+                    viewportLayout.Dock = DockStyle.Fill;
+                    mainViewportPanel.Controls.Add(viewportLayout);
                 }
                 else
                 {
+                    // If already parented, clear its children before repopulating.
                     viewportLayout.Controls.Clear();
                 }
+
+                // Reset panel background so previous page color doesn't bleed through
+                mainViewportPanel.BackColor = Color.White;
+                // Optional: ensure layout background matches parent so no transparency shows
+                viewportLayout.BackColor = Color.Transparent; // or Color.White if you prefer
 
                 // Prepare toolbar (combo + buttons)
                 logButtonPanel.AutoSize = true;
@@ -1203,38 +1325,21 @@ namespace Carebed.UI
                 // Prepare the grid
                 logGridView.Dock = DockStyle.Fill;
 
-                if (viewportLayout != null)
-                {
-                    // use the toolbar container so left controls sit on the left and pause controls on the right
-                    viewportLayout.Controls.Add(logToolbarContainer, 0, 0);
-                    viewportLayout.Controls.Add(logGridView, 0, 1);
-                }
-                else
-                {
-                    if (!mainViewportPanel.Controls.Contains(logToolbarContainer))
-                    {
-                        logToolbarContainer.Dock = DockStyle.Top;
-                        mainViewportPanel.Controls.Add(logToolbarContainer);
-                    }
-                    if (!mainViewportPanel.Controls.Contains(logGridView))
-                    {
-                        logGridView.Dock = DockStyle.Fill;
-                        mainViewportPanel.Controls.Add(logGridView);
-                    }
-                }
+                // Use the toolbar container so left controls sit on the left and pause controls on the right
+                viewportLayout.Controls.Add(logToolbarContainer, 0, 0);
+                viewportLayout.Controls.Add(logGridView, 0, 1);
 
                 // ensure pause button state reflects current subscription state
-                globalMessagesPaused = false; // On initial show assume On (OnLoad subscribes). Adjust if your app changes this sooner.
+                globalMessagesPaused = false;
                 UpdateGlobalMessagesStatus();
 
                 // Mark Logs tab active and ensure floating button state
                 logsTabActive = true;
                 if (scrollToLatestButton != null)
                 {
-                    // Start hidden; UpdateScrollButtonVisibility will show if needed
                     scrollToLatestButton.Visible = false;
                     scrollToLatestButton.BringToFront();
-                    RepositionFloatingButton(); // ensure correct position now
+                    RepositionFloatingButton();
                 }
 
                 try { mainViewportPanel.BringToFront(); } catch { }
@@ -1252,10 +1357,24 @@ namespace Carebed.UI
         /// <param name="e"></param>
         private void SettingsTabButton_Click(object? sender, EventArgs e)
         {
-            // 1. Clear the panel
-            mainViewportPanel.Controls.Clear();
-            mainViewportPanel.BackColor = Color.DarkGray;
+            // Ensure viewportLayout is present in the main viewport so all views share the same container.
+            if (!mainViewportPanel.Controls.Contains(viewportLayout))
+            {
+                mainViewportPanel.Controls.Clear();
+                viewportLayout.Dock = DockStyle.Fill;
+                mainViewportPanel.Controls.Add(viewportLayout);
+            }
+            // Clear existing view content (toolbar and content rows)
+            viewportLayout.Controls.Clear();
 
+            // Use a dedicated panel for settings so it's a single unit we can add/remove.
+            var settingsPanel = new Panel
+            {
+                Dock = DockStyle.Fill,
+                BackColor = Color.Transparent
+            };
+
+            // Title
             Label titleLabel = new Label
             {
                 Text = "Settings",
@@ -1264,39 +1383,106 @@ namespace Carebed.UI
                 Location = new Point(40, 30)
             };
 
-            
             Label pollingLabel = new Label
             {
                 Text = "Adjust Polling Rate (0-60s):",
                 Font = new Font("Segoe UI", 12, FontStyle.Regular),
                 AutoSize = true,
-                // Y=100 puts it comfortably below the Title
                 Location = new Point(40, 100)
             };
 
-            NumericUpDown pollingInput = new NumericUpDown
+            // create and store references to controls so ack handler can update them later
+            settingsPollingInput = new NumericUpDown
             {
                 Minimum = 1,
                 Maximum = 60,
                 Increment = 1,
                 Font = new Font("Segoe UI", 12, FontStyle.Regular),
                 Width = 80,
-                
                 Location = new Point(350, 96)
             };
 
-            Button saveButton = new Button
+            settingsSaveButton = new Button
             {
                 Text = "Apply Settings",
                 Font = new Font("Segoe UI", 10, FontStyle.Bold),
                 Size = new Size(180, 45),
-                BackColor = Color.LightGray, // Disabled initially
+                BackColor = Color.LightGray,
                 ForeColor = Color.DarkGray,
                 FlatStyle = FlatStyle.Flat,
                 Cursor = Cursors.Default,
-                Enabled = false,
-                // MOVED UP: Directly below the Polling Rate line
-                Location = new Point(40, 150)
+                Enabled = false
+                // Location will be set below so it can be centered under the numeric input
+            };
+
+            // status label to the right of the numeric input (positioned after controls are added)
+            settingsPollingStatusLabel = new Label
+            {
+                Text = $"Polling Rate: {appliedPollingSeconds}s",
+                AutoSize = true,
+                Font = new Font("Segoe UI", 9, FontStyle.Regular),
+                ForeColor = Color.Black
+            };
+
+            // capture baseline from appliedPollingSeconds so Save enables only on change
+            int initialPollingValue = appliedPollingSeconds;
+            settingsPollingInput.Value = initialPollingValue;
+
+            // update saveButton UI when value changes
+            settingsPollingInput.ValueChanged += (s, ev) =>
+            {
+                bool changed = (int)settingsPollingInput.Value != initialPollingValue;
+                settingsSaveButton.Enabled = changed;
+                settingsSaveButton.BackColor = changed ? Color.DodgerBlue : Color.LightGray;
+                settingsSaveButton.ForeColor = changed ? Color.White : Color.DarkGray;
+            };
+
+            // Send command and show "Applying..." — do not update appliedPollingSeconds here
+            settingsSaveButton.Click += (s, ev) =>
+            {
+                var correlationId = Guid.NewGuid();
+                var requestedSeconds = (int)settingsPollingInput.Value;
+
+                var cmd = new SensorCommandMessage
+                {
+                    CommandType = SensorCommands.AdjustPollingRate,
+                    SensorID = "SensorManager",
+                    TypeOfSensor = SensorTypes.Manager,
+                    CorrelationId = correlationId
+                };
+                cmd.Parameters ??= new Dictionary<string, object>();
+                cmd.Parameters["IntervalSeconds"] = (double)requestedSeconds;
+
+                // create timeout timer
+                var timer = new System.Timers.Timer(PollingRequestTimeoutMs) { AutoReset = false };
+                timer.Elapsed += (ts, te) =>
+                {
+                    // Timer runs on threadpool — call handler to update UI
+                    OnPollingRequestTimedOut(correlationId);
+                };
+                timer.Start();
+
+                // store pending request
+                _pendingPollingRequests[correlationId] = new PendingPollingRequest
+                {
+                    RequestedSeconds = requestedSeconds,
+                    TimeoutTimer = timer
+                };
+
+                // update UI status
+                if (settingsPollingStatusLabel != null)
+                    settingsPollingStatusLabel.Text = "Applying new polling rate...";
+                settingsSaveButton.Enabled = false;
+                settingsSaveButton.BackColor = Color.LightGray;
+                settingsSaveButton.ForeColor = Color.DarkGray;
+
+                var envelope = new MessageEnvelope<SensorCommandMessage>(
+                    cmd,
+                    MessageOrigins.DisplayManager,
+                    MessageTypes.SensorCommand
+                );
+
+                _ = _eventBus.PublishAsync(envelope);
             };
 
             Button powerOffButton = new Button
@@ -1308,7 +1494,6 @@ namespace Carebed.UI
                 ForeColor = Color.White,
                 FlatStyle = FlatStyle.Flat,
                 Cursor = Cursors.Hand,
-                
                 Location = new Point(40, 230)
             };
 
@@ -1321,15 +1506,88 @@ namespace Carebed.UI
                 }
             };
 
-            mainViewportPanel.Controls.Add(powerOffButton);
-            mainViewportPanel.Controls.Add(titleLabel);
-            mainViewportPanel.Controls.Add(pollingLabel);
-            mainViewportPanel.Controls.Add(pollingInput);
-            mainViewportPanel.Controls.Add(saveButton);
+            // Build an inner TableLayout that auto-sizes and contains the settings controls,
+            // a centered Apply button row, a spacer (3 button-heights) and the centered Shutdown button.
+            var innerLayout = new TableLayoutPanel
+            {
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                ColumnCount = 3,
+                RowCount = 4,
+                BackColor = Color.Transparent,
+                Margin = new Padding(0)
+            };
+            innerLayout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            innerLayout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            innerLayout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
 
+            innerLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize)); // polling row
+            innerLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize)); // apply button row
+            innerLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, settingsSaveButton.Height * 3)); // spacer row (3 button heights)
+            innerLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize)); // shutdown row
+
+            // Add the polling row: label, numeric input, status label
+            innerLayout.Controls.Add(pollingLabel, 0, 0);
+            innerLayout.Controls.Add(settingsPollingInput, 1, 0);
+            innerLayout.Controls.Add(settingsPollingStatusLabel, 2, 0);
+
+            // Centered Apply button row: use a FlowLayoutPanel so the button is centered automatically
+            var applyRow = new FlowLayoutPanel
+            {
+                AutoSize = true,
+                FlowDirection = FlowDirection.LeftToRight,
+                WrapContents = false,
+                Anchor = AnchorStyles.None,
+                Margin = new Padding(0)
+            };
+            applyRow.Controls.Add(settingsSaveButton);
+            innerLayout.Controls.Add(applyRow, 0, 1);
+            innerLayout.SetColumnSpan(applyRow, 3);
+
+            // Spacer row is already defined via RowStyle (no control required), but keep a tiny panel to ensure height on some runtimes
+            var spacer = new Panel { Width = 1, Height = settingsSaveButton.Height * 3 };
+            innerLayout.Controls.Add(spacer, 0, 2);
+            innerLayout.SetColumnSpan(spacer, 3);
+
+            // Centered Shutdown button row
+            var shutdownRow = new FlowLayoutPanel
+            {
+                AutoSize = true,
+                FlowDirection = FlowDirection.LeftToRight,
+                WrapContents = false,
+                Anchor = AnchorStyles.None,
+                Margin = new Padding(0)
+            };
+            shutdownRow.Controls.Add(powerOffButton);
+            innerLayout.Controls.Add(shutdownRow, 0, 3);
+            innerLayout.SetColumnSpan(shutdownRow, 3);
+
+            // Add the inner layout to the settings panel and center it horizontally.
+            // Keep a resize handler so it stays centered when the viewport or form resizes.
+            int topOffset = 48; // adjust this value (pixels) to move the whole group down
+            settingsPanel.Controls.Add(innerLayout);
+            innerLayout.Location = new Point(
+                Math.Max(0, (settingsPanel.ClientSize.Width - innerLayout.Width) / 2),
+                topOffset // top offset
+            );
+            settingsPanel.Resize += (s, ev) =>
+            {
+                innerLayout.Location = new Point(
+                    Math.Max(0, (settingsPanel.ClientSize.Width - innerLayout.Width) / 2),
+                    topOffset
+                );
+            };
+
+            // place the settingsPanel into the content row of the viewportLayout
+            viewportLayout.Controls.Add(settingsPanel, 0, 1);
+
+            // update colours and state
+            mainViewportPanel.BackColor = Color.DarkGray;
             logsTabActive = false;
             if (scrollToLatestButton != null && scrollToLatestButton.Visible)
                 scrollToLatestButton.Visible = false;
+
+            EnsureDockingOrder();
         }
 
         /// <summary>
@@ -1396,6 +1654,134 @@ namespace Carebed.UI
                 Payload = msg.Payload,
                 IsCritical = msg.Payload?.IsCritical ?? false
             };
+        }       
+
+        /// <summary>
+        /// Handles the reception of sensor telemetry data - updates the sensor grid.
+        /// </summary>
+        private void HandleSensorTelemetry(MessageEnvelope<SensorTelemetryMessage> envelope)
+        {
+            var msg = envelope.Payload;
+            if (msg?.Data == null) return;
+            RunOnUiThread(() =>
+            {
+                if (!sensorRows.TryGetValue(msg.SensorID, out var row))
+                {
+                    row = new DataGridViewRow();
+                    row.CreateCells(sensorGridView,
+                        msg.SensorID,
+                        msg.TypeOfSensor.ToString(),
+                        msg.Data.Value.ToString("F2"),
+                        msg.Data.IsCritical ? "Yes" : "No",
+                        msg.Data.CreatedAt.ToString("HH:mm:ss")
+                    );
+                    sensorGridView.Rows.Add(row);
+                    sensorRows[msg.SensorID] = row;
+                }
+                else
+                {
+                    row.SetValues(
+                        msg.SensorID,
+                        msg.TypeOfSensor.ToString(),
+                        msg.Data.Value.ToString("F2"),
+                        msg.Data.IsCritical ? "Yes" : "No",
+                        msg.Data.CreatedAt.ToString("HH:mm:ss")
+                    );
+                }
+            });
+        }
+
+        /// <summary>
+        /// Handles the click event for the "Pause Global Messages" button.
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
+        private void PauseGlobalMessagesButton_Click(object? sender, EventArgs e)
+        {
+            // toggle subscribe/unsubscribe of global messages
+            globalMessagesPaused = !globalMessagesPaused;
+
+            if (_globalLogHandler != null)
+            {
+                if (globalMessagesPaused)
+                    _eventBus.UnsubscribeFromGlobalMessages(_globalLogHandler);
+                else
+                    _eventBus.SubscribeToGlobalMessages(_globalLogHandler);
+            }
+
+            UpdateGlobalMessagesStatus();
+        }
+
+        /// <summary>
+        /// Handles the Resize event of the main viewport panel to reposition the floating button.
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
+        private void MainViewportPanel_Resize(object? sender, EventArgs e)
+        {
+            RepositionFloatingButton();
+        }
+
+        /// <summary>
+        /// Handler for mouse up event on the alert list view.
+        /// </summary>
+        private void AlertListView_MouseUp(object sender, MouseEventArgs e)
+        {
+            if (e.Button != MouseButtons.Left)
+                return;
+
+            var info = alertListView.HitTest(e.Location);
+            if (info.Item != null)
+            {
+                var item = info.Item;
+                string count = item.SubItems[0].Text;
+                string time = item.SubItems[1].Text;
+                string source = item.SubItems[2].Text;
+                string alert = item.SubItems[3].Text;
+                string severity = item.SubItems[4].Text;
+
+                var details = $"Count: {count}\nTime: {time}\nSource: {source}\nAlert Value: {alert}\nSeverity: {severity}";
+
+                var result = ShowAlertPopup(
+                    details + "\n\nClear this alert?",
+                    MessageBoxButtons.OKCancel,
+                    MessageBoxIcon.Information
+                );
+
+                if (result == DialogResult.OK)
+                {
+                    RunOnUiThread(() => RemoveAlertListViewItemAndUpdate(item));
+                }
+            }
+        }
+
+        #endregion
+
+        #region Methods
+
+        private void OnPollingRequestTimedOut(Guid correlationId)
+        {
+            // This method is called from a timer (non-UI thread).
+            RunOnUiThread(() =>
+            {
+                if (_pendingPollingRequests.TryGetValue(correlationId, out var pending))
+                {
+                    try { pending.TimeoutTimer.Stop(); pending.TimeoutTimer.Dispose(); } catch { }
+                    _pendingPollingRequests.Remove(correlationId);
+
+                    if (settingsPollingStatusLabel != null)
+                        settingsPollingStatusLabel.Text = "Timed out waiting for ack";
+
+                    // Allow the user to retry: re-enable Save if the current input differs from applied baseline
+                    if (settingsPollingInput != null && settingsSaveButton != null)
+                    {
+                        bool changed = (int)settingsPollingInput.Value != appliedPollingSeconds;
+                        settingsSaveButton.Enabled = changed;
+                        settingsSaveButton.BackColor = changed ? Color.DodgerBlue : Color.LightGray;
+                        settingsSaveButton.ForeColor = changed ? Color.White : Color.DarkGray;
+                    }
+                }
+            });
         }
 
         /// <summary>
@@ -1446,93 +1832,54 @@ namespace Carebed.UI
         }
 
         /// <summary>
-        /// Initialize the sensor grid in the main viewport panel.
+        /// Shows the sensor grid in the main viewport.
         /// </summary>
-        private void InitializeSensorGrid()
-        {
-            sensorGridView = new DataGridView
-            {
-                Dock = DockStyle.Fill,
-                ReadOnly = true,
-                AllowUserToAddRows = false,
-                AllowUserToDeleteRows = false,
-                AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
-                ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.AutoSize,
-                BackgroundColor = Color.White
-            };
-            sensorGridView.Columns.Add("SensorID", "Sensor ID");
-            sensorGridView.Columns.Add("Type", "Type");
-            sensorGridView.Columns.Add("Value", "Value");
-            sensorGridView.Columns.Add("IsCritical", "Critical");
-            sensorGridView.Columns.Add("Timestamp", "Timestamp");
-        }
-
         private void ShowSensorGrid()
         {
-            mainViewportPanel.Controls.Clear();
-            mainViewportPanel.Controls.Add(sensorGridView);
+            // Ensure viewportLayout is parented so content is visible
+            if (!mainViewportPanel.Controls.Contains(viewportLayout))
+            {
+                mainViewportPanel.Controls.Clear();
+                viewportLayout.Dock = DockStyle.Fill;
+                mainViewportPanel.Controls.Add(viewportLayout);
+            }
+
+            // Clear any existing content and show the sensor grid in the content row
+            viewportLayout.Controls.Clear();
+
+            // Prepare sensor grid
+            sensorGridView.Dock = DockStyle.Fill;
+
+            // Add sensor grid to the main content row (row index 1)
+            viewportLayout.Controls.Add(sensorGridView, 0, 1);
+
+            // Reset background to the Vitals color
+            mainViewportPanel.BackColor = Color.LightSkyBlue;
+
+            logsTabActive = false;
+            if (scrollToLatestButton != null && scrollToLatestButton.Visible)
+                scrollToLatestButton.Visible = false;
+
+            EnsureDockingOrder();
         }
 
+        /// <summary>
+        /// Hides the sensor grid from the main viewport.
+        /// </summary>
         private void HideSensorGrid()
         {
+            // If the sensorGridView is currently hosted inside the viewportLayout, remove it.
+            if (viewportLayout != null && viewportLayout.Controls.Contains(sensorGridView))
+                viewportLayout.Controls.Remove(sensorGridView);
+
+            // If sensorGrid was parented directly for any reason, remove it from mainViewportPanel too.
             if (mainViewportPanel.Controls.Contains(sensorGridView))
                 mainViewportPanel.Controls.Remove(sensorGridView);
         }
 
         /// <summary>
-        /// Handles the reception of sensor telemetry data - updates the sensor grid.
+        /// Updates the global messages pause button text and status indicator color.
         /// </summary>
-        private void HandleSensorTelemetry(MessageEnvelope<SensorTelemetryMessage> envelope)
-        {
-            var msg = envelope.Payload;
-            if (msg?.Data == null) return;
-            RunOnUiThread(() =>
-            {
-                if (!sensorRows.TryGetValue(msg.SensorID, out var row))
-                {
-                    row = new DataGridViewRow();
-                    row.CreateCells(sensorGridView,
-                        msg.SensorID,
-                        msg.TypeOfSensor.ToString(),
-                        msg.Data.Value.ToString("F2"),
-                        msg.Data.IsCritical ? "Yes" : "No",
-                        msg.Data.CreatedAt.ToString("HH:mm:ss")
-                    );
-                    sensorGridView.Rows.Add(row);
-                    sensorRows[msg.SensorID] = row;
-                }
-                else
-                {
-                    row.SetValues(
-                        msg.SensorID,
-                        msg.TypeOfSensor.ToString(),
-                        msg.Data.Value.ToString("F2"),
-                        msg.Data.IsCritical ? "Yes" : "No",
-                        msg.Data.CreatedAt.ToString("HH:mm:ss")
-                    );
-                }
-            });
-        }
-
-        #endregion
-        #region Methods
-
-        private void PauseGlobalMessagesButton_Click(object? sender, EventArgs e)
-        {
-            // toggle subscribe/unsubscribe of global messages
-            globalMessagesPaused = !globalMessagesPaused;
-
-            if (_globalLogHandler != null)
-            {
-                if (globalMessagesPaused)
-                    _eventBus.UnsubscribeFromGlobalMessages(_globalLogHandler);
-                else
-                    _eventBus.SubscribeToGlobalMessages(_globalLogHandler);
-            }
-
-            UpdateGlobalMessagesStatus();
-        }
-
         private void UpdateGlobalMessagesStatus()
         {
             if (pauseGlobalMessagesButton == null || pauseGlobalStatusIndicator == null) return;
@@ -1549,6 +1896,13 @@ namespace Carebed.UI
             }
         }
 
+        /// <summary>
+        /// Updates the visibility of the "Scroll to Latest" button based on the current state of the logs view.
+        /// </summary>
+        /// <remarks>This method ensures that the "Scroll to Latest" button is only visible when the logs
+        /// view is active  and the last row in the log grid is not currently visible. If the logs view is inactive, the
+        /// button  will always be hidden. Additionally, the button's position is adjusted when it becomes
+        /// visible.</remarks>
         private void UpdateScrollButtonVisibility()
         {
             if (!logsTabActive) // only show/hide when Logs view is active
@@ -1596,23 +1950,30 @@ namespace Carebed.UI
             }
         }
 
-        // Helper to parse a log line into structured columns
-        private (string Type, string Timestamp, string Source, string Message)? ParseLogLine(string line)
-        {
-            // Example log format: [INFO] 2025-12-02 10:00:00 SourceName - Message text
-            var match = System.Text.RegularExpressions.Regex.Match(line, @"\[(\w+)\]\s+([^\-]+)\s+([^\-]+)\s*-\s*(.*)");
-            if (match.Success)
-            {
-                var type = match.Groups[1].Value;
-                var timestamp = match.Groups[2].Value.Trim();
-                var source = match.Groups[3].Value.Trim();
-                var message = match.Groups[4].Value.Trim();
-                return (type, timestamp, source, message);
-            }
-            // Fallback for lines that don't match
-            return null;
-        }
+        /// <summary>
+        /// Parses a log line into its components.
+        /// </summary>
+        /// <param name="line">The log line to parse.</param>
+        /// <returns>A tuple containing the type, timestamp, source, and message if parsing is successful; otherwise, null.</returns>
+        //private (string Type, string Timestamp, string Source, string Message)? ParseLogLine(string line)
+        //{
+        //    // Example log format: [INFO] 2025-12-02 10:00:00 SourceName - Message text
+        //    var match = System.Text.RegularExpressions.Regex.Match(line, @"\[(\w+)\]\s+([^\-]+)\s+([^\-]+)\s*-\s*(.*)");
+        //    if (match.Success)
+        //    {
+        //        var type = match.Groups[1].Value;
+        //        var timestamp = match.Groups[2].Value.Trim();
+        //        var source = match.Groups[3].Value.Trim();
+        //        var message = match.Groups[4].Value.Trim();
+        //        return (type, timestamp, source, message);
+        //    }
+        //    // Fallback for lines that don't match
+        //    return null;
+        //}
 
+        /// <summary>
+        /// Applies the selected log filter to the log grid view.
+        /// </summary>
         private void ApplyLogFilter()
         {
             // Track the selected MessageId before clearing
@@ -1654,13 +2015,9 @@ namespace Carebed.UI
             }
         }
 
-        private void ShowLiveLogs()
-        {
-            // Clear grid, subscribe to global messages
-            logGridView.Rows.Clear();
-            _eventBus.SubscribeToGlobalMessages(_globalLogHandler);
-        }       
-
+        /// <summary>
+        /// Configures the root layout of the main dashboard form.
+        /// </summary>
         private void BuildRootLayout()
         {
             // Remove any controls that were previously added directly to the form.
@@ -1710,7 +2067,9 @@ namespace Carebed.UI
             this.PerformLayout();
         }
 
-        // Helper to reposition the floating button to the bottom-right of the viewport.
+        /// <summary>
+        /// Repositions the floating "Scroll to Latest" button within the main viewport panel.
+        /// </summary>
         private void RepositionFloatingButton()
         {
             if (scrollToLatestButton == null || mainViewportPanel == null) return;
@@ -1728,12 +2087,6 @@ namespace Carebed.UI
 
             scrollToLatestButton.Location = new Point(x, y);
             scrollToLatestButton.BringToFront();
-        }
-
-        // Keep the floating button positioned when the main viewport resizes
-        private void MainViewportPanel_Resize(object? sender, EventArgs e)
-        {
-            RepositionFloatingButton();
         }
 
         /// <summary>
@@ -1812,39 +2165,6 @@ namespace Carebed.UI
             {
                 popup.StartPosition = FormStartPosition.CenterParent;
                 return popup.ShowDialog(this);
-            }
-        }
-
-        /// <summary>
-        /// Handler for mouse up event on the alert list view.
-        /// </summary>
-        private void AlertListView_MouseUp(object sender, MouseEventArgs e)
-        {
-            if (e.Button != MouseButtons.Left)
-                return;
-
-            var info = alertListView.HitTest(e.Location);
-            if (info.Item != null)
-            {
-                var item = info.Item;
-                string count = item.SubItems[0].Text;
-                string time = item.SubItems[1].Text;
-                string source = item.SubItems[2].Text;
-                string alert = item.SubItems[3].Text;
-                string severity = item.SubItems[4].Text;
-
-                var details = $"Count: {count}\nTime: {time}\nSource: {source}\nAlert Value: {alert}\nSeverity: {severity}";
-
-                var result = ShowAlertPopup(
-                    details + "\n\nClear this alert?",
-                    MessageBoxButtons.OKCancel,
-                    MessageBoxIcon.Information
-                );
-
-                if (result == DialogResult.OK)
-                {
-                    RunOnUiThread(() => RemoveAlertListViewItemAndUpdate(item));
-                }
             }
         }
 
@@ -1943,6 +2263,13 @@ namespace Carebed.UI
             // Unsubscribe from global messages
             if (_globalLogHandler != null) _eventBus.UnsubscribeFromGlobalMessages(_globalLogHandler);
 
+            // Dispose any pending timers
+            foreach (var kv in _pendingPollingRequests.Values)
+            {
+                try { kv.TimeoutTimer.Stop(); kv.TimeoutTimer.Dispose(); } catch { }
+            }
+            _pendingPollingRequests.Clear();
+
             base.OnFormClosed(e);
         }
 
@@ -1958,6 +2285,8 @@ namespace Carebed.UI
             }
             base.Dispose(disposing);
         }
+
+        #endregion
 
         #region Windows Form Designer generated code
 
@@ -1977,8 +2306,6 @@ namespace Carebed.UI
 
         #endregion
 
-        #endregion
+        
     }
-
-
 }

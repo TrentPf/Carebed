@@ -228,7 +228,7 @@ namespace Carebed.Managers
         public bool AdjustPollingRate(double intervalSeconds)
         {
             if (intervalSeconds <= 0) return false;
-            if (intervalSeconds >= 60) return false;
+            if (intervalSeconds > 60) return false;
 
             _timer.Interval = intervalSeconds * 1000;
             return true;

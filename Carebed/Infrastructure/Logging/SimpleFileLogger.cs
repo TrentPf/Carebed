@@ -2,6 +2,7 @@ using Carebed.Infrastructure.Message;
 using Carebed.Infrastructure.MessageEnvelope;
 using System.Collections.Concurrent;
 using System.Text.Json;
+using System.IO;
 
 namespace Carebed.Infrastructure.Logging
 {
@@ -30,6 +31,12 @@ namespace Carebed.Infrastructure.Logging
         // Background worker task - enables asynchronous log processing
         private Task? _worker;
 
+        // Maximum allowed file size in bytes before trimming occurs (default 10 MB)
+        private long _maxFileSizeBytes = 10 * 1024 * 1024;
+
+        // After trim, keep this many bytes from the end of the log (default 50% of max)
+        private long _trimToBytes => Math.Max(1024, _maxFileSizeBytes / 2);
+
         #endregion
 
         #region Constructors
@@ -40,13 +47,26 @@ namespace Carebed.Infrastructure.Logging
         /// <param name="filePath"></param>
         /// <exception cref="ArgumentNullException"></exception>
         public SimpleFileLogger(string filePath)
-        {           
+        {
             _filePath = filePath ?? throw new ArgumentNullException(nameof(filePath));
         }
 
         #endregion
 
         #region Public Methods
+
+        /// <summary>
+        /// Configure maximum log file size in bytes. Must be called before Start to avoid races.
+        /// </summary>
+        public void SetMaxFileSizeBytes(long bytes)
+        {
+            if (bytes < 1024) throw new ArgumentOutOfRangeException(nameof(bytes));
+            lock (_sync)
+            {
+                if (_started) throw new InvalidOperationException("Cannot change max file size while started.");
+                _maxFileSizeBytes = bytes;
+            }
+        }
 
         /// <summary>
         /// Changes the file path used by the logger.
@@ -88,6 +108,9 @@ namespace Carebed.Infrastructure.Logging
                 // Open file stream for appending log messages
                 var fs = new FileStream(_filePath, FileMode.Append, FileAccess.Write, FileShare.ReadWrite);
                 _writer = new StreamWriter(fs) { AutoFlush = false };
+
+                // Trim file if it's already too large
+                EnsureFileSizeLimitInternalLocked();
 
                 // Mark as started
                 _started = true;
@@ -220,6 +243,9 @@ namespace Carebed.Infrastructure.Logging
                         // Flush the writer to ensure all messages are written to disk
                         // This is the actual I/O operation
                         _writer?.Flush();
+
+                        // After flushing, check file size and trim if needed.
+                        EnsureFileSizeLimitInternalLocked();
                     }
                     lastFlush = DateTime.UtcNow;
                 }
@@ -232,6 +258,7 @@ namespace Carebed.Infrastructure.Logging
             lock (_sync)
             {
                 _writer?.Flush();
+                EnsureFileSizeLimitInternalLocked();
             }
         }
 
@@ -244,7 +271,7 @@ namespace Carebed.Infrastructure.Logging
             string line;
             try
             {
-                var opts = new JsonSerializerOptions { 
+                var opts = new JsonSerializerOptions {
                     WriteIndented = false,
                     Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() }
                 };
@@ -267,6 +294,102 @@ namespace Carebed.Infrastructure.Logging
                 {
                     // swallow for MVP
                 }
+            }
+        }
+
+        /// <summary>
+        /// Trim the log file if it exceeds configured max size.
+        /// Must be called with lock(_sync) held.
+        /// </summary>
+        private void EnsureFileSizeLimitInternalLocked()
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(_filePath)) return;
+                // Get current length from writer's base stream if available, otherwise from file info.
+                long length = -1;
+                if (_writer != null && _writer.BaseStream is FileStream fsWriter)
+                {
+                    fsWriter.Flush();
+                    length = fsWriter.Length;
+                }
+                else
+                {
+                    if (File.Exists(_filePath))
+                        length = new FileInfo(_filePath).Length;
+                    else
+                        length = 0;
+                }
+
+                if (length <= _maxFileSizeBytes) return;
+
+                // Close current writer so we can safely rewrite file
+                try
+                {
+                    _writer?.Flush();
+                    _writer?.Dispose();
+                }
+                catch { }
+                _writer = null;
+
+                // How many bytes to keep from end
+                long keep = Math.Min(_trimToBytes, length);
+
+                // Read the tail of the file
+                string tempPath = _filePath + ".tmp";
+                using (var readFs = new FileStream(_filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                {
+                    // Seek to starting position
+                    if (keep < readFs.Length)
+                        readFs.Seek(-keep, SeekOrigin.End);
+                    else
+                        readFs.Seek(0, SeekOrigin.Begin);
+
+                    // Read into buffer
+                    byte[] buffer = new byte[keep];
+                    int totalRead = 0;
+                    while (totalRead < keep)
+                    {
+                        int r = readFs.Read(buffer, totalRead, (int)(keep - totalRead));
+                        if (r <= 0) break;
+                        totalRead += r;
+                    }
+
+                    // Optionally we can try to ensure we start at a newline boundary to keep lines intact.
+                    // If the first byte isn't a newline, attempt to find the first newline in buffer and start there.
+                    int startIndex = 0;
+                    for (int i = 0; i < Math.Min(buffer.Length, 1024); i++)
+                    {
+                        if (buffer[i] == (byte)'\n')
+                        {
+                            startIndex = i + 1;
+                            break;
+                        }
+                    }
+
+                    // Write tail to temp file
+                    using (var tmp = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None))
+                    {
+                        tmp.Write(buffer, startIndex, totalRead - startIndex);
+                        tmp.Flush();
+                    }
+                }
+
+                // Replace original file with temp
+                try
+                {
+                    File.Delete(_filePath);
+                }
+                catch { /* ignore */ }
+                File.Move(tempPath, _filePath);
+
+                // Reopen writer for append
+                var fs = new FileStream(_filePath, FileMode.Append, FileAccess.Write, FileShare.ReadWrite);
+                _writer = new StreamWriter(fs) { AutoFlush = false };
+            }
+            catch
+            {
+                // swallow trimming errors to avoid crashing logger
             }
         }
 
