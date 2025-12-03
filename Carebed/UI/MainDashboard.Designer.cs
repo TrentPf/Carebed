@@ -14,10 +14,11 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Windows.Forms;
 using static System.Runtime.InteropServices.JavaScript.JSType;
+using System.Windows.Forms.DataVisualization.Charting;
 
 namespace Carebed.UI
 {
-    public partial class MainDashboard : Form 
+    public partial class MainDashboard : Form
     {
         /// <summary>
         ///  Required designer variable.
@@ -25,7 +26,7 @@ namespace Carebed.UI
         private System.ComponentModel.IContainer components = null;
 
         #region Fields and Properties
-        
+
         // A reference to the event bus for publishing and subscribing to events.        
         private readonly IEventBus _eventBus;
 
@@ -54,6 +55,12 @@ namespace Carebed.UI
         // Sensor grid for displaying telemetry data
         private DataGridView sensorGridView;
         private Dictionary<string, DataGridViewRow> sensorRows = new();
+
+        // Charting UI for sensor values over time
+        private Chart sensorChart; // <-- new chart field
+        private SplitContainer splitContainerSensors; // <-- split container to host grid + chart
+        private Dictionary<string, Series> sensorSeries = new(); // map sensor id -> chart series
+        private readonly int ChartMaxPoints = 120; // keep last N points per series
 
         // Alert Clear Ack handler
         private Action<MessageEnvelope<AlertClearAckMessage>>? _alertClearAckHandler;
@@ -98,10 +105,10 @@ namespace Carebed.UI
         Image AlertsActiveIcon = SystemIcons.Warning.ToBitmap();
         Image SevereAlertsIcon = SystemIcons.Error.ToBitmap();
         #endregion
-        
+
         #region Tabs and Viewport
 
-        private Panel tabsPanel;        
+        private Panel tabsPanel;
 
         private Button vitalsTabButton;
         private Button actuatorsTabButton;
@@ -109,6 +116,8 @@ namespace Carebed.UI
         private Button settingsTabButton;
 
         private Panel mainViewportPanel;
+        private TableLayoutPanel rootLayout;
+        private TableLayoutPanel viewportLayout;
 
         #endregion
 
@@ -126,8 +135,6 @@ namespace Carebed.UI
         private Button clearAlertsButton;
         private Button pauseAlertsButton;
         #endregion
-
-
 
         #region Logs Viewer Section
         private DataGridView logGridView;
@@ -149,9 +156,6 @@ namespace Carebed.UI
         private bool globalMessagesPaused = false;
         #endregion
 
-        private TableLayoutPanel rootLayout;
-        private TableLayoutPanel viewportLayout;
-
         #region Settings Page Elements
 
         private class PendingPollingRequest
@@ -166,6 +170,13 @@ namespace Carebed.UI
         private Label? settingsPollingStatusLabel;        // status label shown while waiting for ack
         private readonly Dictionary<Guid, PendingPollingRequest> _pendingPollingRequests = new();
         private const int PollingRequestTimeoutMs = 5000; // 5s timeout (tweak as needed)
+        #endregion
+
+        #region Sensor Charts and Grid Controls
+
+        private FlowLayoutPanel chartsFlowPanel;
+        private Dictionary<string, Chart> sensorCharts = new();
+
         #endregion
 
         #endregion
@@ -185,7 +196,7 @@ namespace Carebed.UI
             InitializeTabsPanel();
             InitializeAlertLogPanel();
             InitializeMainViewportPanel();
-            InitializeSensorGrid();
+            InitializeSensorGrid(); // <-- sets up grid + chart controls
             InitializeLogViewer();
 
             // Setup the Alert Banner click event handlers
@@ -838,24 +849,85 @@ namespace Carebed.UI
 
         /// <summary>
         /// Initialize the sensor grid in the main viewport panel.
+        /// Also prepares a chart control for plotting sensor values over time.
         /// </summary>
+        //private void InitializeSensorGrid()
+        //{
+        //    sensorGridView = new DataGridView
+        //    {
+        //        Dock = DockStyle.Fill,
+        //        ReadOnly = true,
+        //        AllowUserToAddRows = false,
+        //        AllowUserToDeleteRows = false,
+        //        AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
+        //        ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.AutoSize,
+        //        BackgroundColor = Color.White
+        //    };
+        //    sensorGridView.Columns.Add("SensorID", "Sensor ID");
+        //    sensorGridView.Columns.Add("Type", "Type");
+        //    sensorGridView.Columns.Add("Value", "Value");
+        //    sensorGridView.Columns.Add("IsCritical", "Critical");
+        //    sensorGridView.Columns.Add("Timestamp", "Timestamp");
+
+        //    // Create split container: left = grid, right = chart
+        //    splitContainerSensors = new SplitContainer
+        //    {
+        //        Dock = DockStyle.Fill,
+        //        Orientation = Orientation.Vertical
+        //    };
+
+        //    // Add the grid to left panel
+        //    splitContainerSensors.Panel1.Controls.Add(sensorGridView);
+
+        //    // Create and configure the chart for the right panel
+        //    sensorChart = new Chart
+        //    {
+        //        Dock = DockStyle.Fill,
+        //        BackColor = Color.White
+        //    };
+
+        //    var chartArea = new ChartArea("SensorArea")
+        //    {
+        //        BackColor = Color.White,
+        //        AxisX = {
+        //            Title = "Time",
+        //            LabelStyle = { Format = "HH:mm:ss" },
+        //            IntervalAutoMode = IntervalAutoMode.VariableCount,
+        //            MajorGrid = { Enabled = false }
+        //        },
+        //        AxisY = {
+        //            Title = "Value",
+        //            MajorGrid = { Enabled = true }
+        //        }
+        //    };
+
+        //    sensorChart.ChartAreas.Add(chartArea);
+
+        //    // Legend
+        //    var legend = new Legend("SensorsLegend")
+        //    {
+        //        Docking = Docking.Top,
+        //        LegendStyle = LegendStyle.Row
+        //    };
+        //    sensorChart.Legends.Add(legend);
+
+        //    // Add chart to right panel
+        //    splitContainerSensors.Panel2.Controls.Add(sensorChart);
+
+        //    // Note: we do NOT add splitContainerSensors to the viewport here; ShowSensorGrid will add it
+        //}
+
         private void InitializeSensorGrid()
         {
-            sensorGridView = new DataGridView
+            chartsFlowPanel = new FlowLayoutPanel
             {
                 Dock = DockStyle.Fill,
-                ReadOnly = true,
-                AllowUserToAddRows = false,
-                AllowUserToDeleteRows = false,
-                AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
-                ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.AutoSize,
-                BackgroundColor = Color.White
+                AutoScroll = true,
+                WrapContents = true,
+                FlowDirection = FlowDirection.LeftToRight,
+                Padding = new Padding(8),
+                BackColor = Color.White
             };
-            sensorGridView.Columns.Add("SensorID", "Sensor ID");
-            sensorGridView.Columns.Add("Type", "Type");
-            sensorGridView.Columns.Add("Value", "Value");
-            sensorGridView.Columns.Add("IsCritical", "Critical");
-            sensorGridView.Columns.Add("Timestamp", "Timestamp");
         }
 
         #endregion       
@@ -1236,7 +1308,7 @@ namespace Carebed.UI
                     //pauseAlertsButton.BackColor = Color.Red; // Not-active
                     UpdatePauseStatusIndicator();
                 });
-                
+
             }
             else
             {
@@ -1627,7 +1699,7 @@ namespace Carebed.UI
 
                 // Add subitems: Source, Severity, Alert Text
                 item.SubItems.Add(alertTime);
-                item.SubItems.Add(source);                
+                item.SubItems.Add(source);
                 item.SubItems.Add(alertText);
                 item.SubItems.Add(severity);
 
@@ -1635,7 +1707,7 @@ namespace Carebed.UI
                 alertListView.Items.Insert(0, item);
                 //UpdateAlertCount();
             });
-           
+
         }
 
         /// <summary>
@@ -1654,39 +1726,63 @@ namespace Carebed.UI
                 Payload = msg.Payload,
                 IsCritical = msg.Payload?.IsCritical ?? false
             };
-        }       
+        }
 
         /// <summary>
         /// Handles the reception of sensor telemetry data - updates the sensor grid.
+        /// Also appends the telemetry point to the chart series for that sensor.
         /// </summary>
         private void HandleSensorTelemetry(MessageEnvelope<SensorTelemetryMessage> envelope)
         {
             var msg = envelope.Payload;
             if (msg?.Data == null) return;
+
             RunOnUiThread(() =>
             {
-                if (!sensorRows.TryGetValue(msg.SensorID, out var row))
+                try
                 {
-                    row = new DataGridViewRow();
-                    row.CreateCells(sensorGridView,
-                        msg.SensorID,
-                        msg.TypeOfSensor.ToString(),
-                        msg.Data.Value.ToString("F2"),
-                        msg.Data.IsCritical ? "Yes" : "No",
-                        msg.Data.CreatedAt.ToString("HH:mm:ss")
-                    );
-                    sensorGridView.Rows.Add(row);
-                    sensorRows[msg.SensorID] = row;
+                    if (chartsFlowPanel == null)
+                        InitializeSensorGrid();
+
+                    // Lazily create a chart for this sensor
+                    if (!sensorCharts.TryGetValue(msg.SensorID, out var chart))
+                    {
+                        chart = CreateChartForSensor(msg.SensorID);
+                        sensorCharts[msg.SensorID] = chart;
+
+                        // Keep series mapping in sensorSeries for compatibility with existing logic
+                        if (chart.Series.Count > 0)
+                            sensorSeries[msg.SensorID] = chart.Series[0];
+
+                        chartsFlowPanel.Controls.Add(chart);
+                        UpdateChartSizes();
+                    }
+
+                    // Append point to series
+                    if (sensorSeries.TryGetValue(msg.SensorID, out var series))
+                    {
+                        var dt = msg.Data.CreatedAt == default ? DateTime.Now : msg.Data.CreatedAt;
+                        series.Points.AddXY(dt.ToOADate(), msg.Data.Value);
+
+                        while (series.Points.Count > ChartMaxPoints)
+                            series.Points.RemoveAt(0);
+
+                        var area = chart.ChartAreas.FirstOrDefault();
+                        if (area != null && series.Points.Count > 0)
+                        {
+                            var lastX = DateTime.FromOADate(series.Points.Last().XValue);
+                            var firstX = DateTime.FromOADate(series.Points.First().XValue);
+                            area.AxisX.Minimum = firstX.ToOADate();
+                            area.AxisX.Maximum = lastX.ToOADate();
+                            area.RecalculateAxesScale();
+                        }
+
+                        chart.Invalidate();
+                    }
                 }
-                else
+                catch
                 {
-                    row.SetValues(
-                        msg.SensorID,
-                        msg.TypeOfSensor.ToString(),
-                        msg.Data.Value.ToString("F2"),
-                        msg.Data.IsCritical ? "Yes" : "No",
-                        msg.Data.CreatedAt.ToString("HH:mm:ss")
-                    );
+                    // Swallow chart update exceptions — UI should remain responsive
                 }
             });
         }
@@ -1720,6 +1816,7 @@ namespace Carebed.UI
         private void MainViewportPanel_Resize(object? sender, EventArgs e)
         {
             RepositionFloatingButton();
+            UpdateChartSizes();
         }
 
         /// <summary>
@@ -1758,6 +1855,70 @@ namespace Carebed.UI
         #endregion
 
         #region Methods
+
+        private void UpdateChartSizes()
+        {
+            if (chartsFlowPanel == null) return;
+
+            const int columns = 3;
+            int available = Math.Max(0, chartsFlowPanel.ClientSize.Width - chartsFlowPanel.Padding.Left - chartsFlowPanel.Padding.Right);
+
+            // account for potential vertical scrollbar width
+            if (chartsFlowPanel.VerticalScroll.Visible)
+                available = Math.Max(0, available - SystemInformation.VerticalScrollBarWidth);
+
+            int targetWidth = Math.Max(280, (available / columns) - 16); // small spacing allowance
+
+            foreach (Control c in chartsFlowPanel.Controls)
+            {
+                if (c is Chart ch)
+                {
+                    ch.Width = targetWidth;
+                    ch.Height = 220;
+                }
+            }
+        }
+
+        private Chart CreateChartForSensor(string sensorId)
+        {
+            var chart = new Chart
+            {
+                BackColor = Color.White,
+                Width = 320,
+                Height = 220,
+                Margin = new Padding(8)
+            };
+
+            var area = new ChartArea($"Area_{sensorId}")
+            {
+                BackColor = Color.White
+            };
+            area.AxisX.Title = "Time";
+            area.AxisX.LabelStyle.Format = "HH:mm:ss";
+            area.AxisX.IntervalAutoMode = IntervalAutoMode.VariableCount;
+            area.AxisX.MajorGrid.Enabled = false;
+            area.AxisY.Title = "Value";
+            area.AxisY.MajorGrid.Enabled = true;
+            chart.ChartAreas.Add(area);
+
+            var series = new Series(sensorId)
+            {
+                ChartType = SeriesChartType.Line,
+                BorderWidth = 2,
+                XValueType = ChartValueType.DateTime,
+                IsVisibleInLegend = false
+            };
+            chart.Series.Add(series);
+
+            var title = new Title(sensorId)
+            {
+                Docking = Docking.Top,
+                Font = new Font("Segoe UI", 9, FontStyle.Bold)
+            };
+            chart.Titles.Add(title);
+
+            return chart;
+        }
 
         private void OnPollingRequestTimedOut(Guid correlationId)
         {
@@ -1844,14 +2005,21 @@ namespace Carebed.UI
                 mainViewportPanel.Controls.Add(viewportLayout);
             }
 
-            // Clear any existing content and show the sensor grid in the content row
+            // Clear any existing content and show the charts panel in the content row
             viewportLayout.Controls.Clear();
 
-            // Prepare sensor grid
-            sensorGridView.Dock = DockStyle.Fill;
+            // Ensure the chartsFlowPanel exists
+            if (chartsFlowPanel == null)
+                InitializeSensorGrid(); // defensive
 
-            // Add sensor grid to the main content row (row index 1)
-            viewportLayout.Controls.Add(sensorGridView, 0, 1);
+            chartsFlowPanel.Dock = DockStyle.Fill;
+            viewportLayout.Controls.Add(chartsFlowPanel, 0, 1);
+
+            // Defer a resize to let layout finish, then size charts
+            this.BeginInvoke((Action)(() =>
+            {
+                UpdateChartSizes();
+            }));
 
             // Reset background to the Vitals color
             mainViewportPanel.BackColor = Color.LightSkyBlue;
@@ -1868,13 +2036,12 @@ namespace Carebed.UI
         /// </summary>
         private void HideSensorGrid()
         {
-            // If the sensorGridView is currently hosted inside the viewportLayout, remove it.
-            if (viewportLayout != null && viewportLayout.Controls.Contains(sensorGridView))
-                viewportLayout.Controls.Remove(sensorGridView);
+            // Remove charts container from the viewport if present
+            if (viewportLayout != null && viewportLayout.Controls.Contains(chartsFlowPanel))
+                viewportLayout.Controls.Remove(chartsFlowPanel);
 
-            // If sensorGrid was parented directly for any reason, remove it from mainViewportPanel too.
-            if (mainViewportPanel.Controls.Contains(sensorGridView))
-                mainViewportPanel.Controls.Remove(sensorGridView);
+            if (mainViewportPanel.Controls.Contains(chartsFlowPanel))
+                mainViewportPanel.Controls.Remove(chartsFlowPanel);
         }
 
         /// <summary>
@@ -1949,27 +2116,6 @@ namespace Carebed.UI
                 }
             }
         }
-
-        /// <summary>
-        /// Parses a log line into its components.
-        /// </summary>
-        /// <param name="line">The log line to parse.</param>
-        /// <returns>A tuple containing the type, timestamp, source, and message if parsing is successful; otherwise, null.</returns>
-        //private (string Type, string Timestamp, string Source, string Message)? ParseLogLine(string line)
-        //{
-        //    // Example log format: [INFO] 2025-12-02 10:00:00 SourceName - Message text
-        //    var match = System.Text.RegularExpressions.Regex.Match(line, @"\[(\w+)\]\s+([^\-]+)\s+([^\-]+)\s*-\s*(.*)");
-        //    if (match.Success)
-        //    {
-        //        var type = match.Groups[1].Value;
-        //        var timestamp = match.Groups[2].Value.Trim();
-        //        var source = match.Groups[3].Value.Trim();
-        //        var message = match.Groups[4].Value.Trim();
-        //        return (type, timestamp, source, message);
-        //    }
-        //    // Fallback for lines that don't match
-        //    return null;
-        //}
 
         /// <summary>
         /// Applies the selected log filter to the log grid view.
