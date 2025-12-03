@@ -62,6 +62,73 @@ namespace Carebed.Tests.Managers
         }
 
         [TestMethod]
+        public async Task HandleAlertClear_ClearAllMessages_ShouldClearAllAndAck()
+        {
+            // Arrange: start manager and create sensor + actuator alerts
+            _alertManager.Start();
+
+            var sensorMsg = new SensorErrorMessage
+            {
+                SensorID = "sensorAll1",
+                TypeOfSensor = SensorTypes.HeartRate,
+                ErrorCode = SensorErrorCodes.SensorDisconnected,
+                Description = "Sensor disconnected",
+                CurrentState = SensorStates.Error,
+                CorrelationId = Guid.NewGuid(),
+                CreatedAt = DateTime.UtcNow
+            };
+            var sensorEnv = new MessageEnvelope<SensorErrorMessage>(sensorMsg, MessageOrigins.SensorManager, MessageTypes.SensorError);
+
+            var methodSensor = typeof(AlertManager).GetMethod("HandleSensorMessage", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            methodSensor.MakeGenericMethod(typeof(SensorErrorMessage)).Invoke(_alertManager, new object[] { sensorEnv });
+
+            var actuatorMsg = new ActuatorErrorMessage
+            {
+                ActuatorId = "actAll1",
+                TypeOfActuator = ActuatorTypes.BedLift,
+                ErrorCode = "E99",
+                Description = "Actuator fault",
+                CurrentState = ActuatorStates.Error,
+                CorrelationId = Guid.NewGuid(),
+                CreatedAt = DateTime.UtcNow
+            };
+            var actuatorEnv = new MessageEnvelope<ActuatorErrorMessage>(actuatorMsg, MessageOrigins.ActuatorManager, MessageTypes.ActuatorError);
+            var methodAct = typeof(AlertManager).GetMethod("HandleActuatorMessage", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            methodAct.MakeGenericMethod(typeof(ActuatorErrorMessage)).Invoke(_alertManager, new object[] { actuatorEnv });
+
+            // Sanity: private store contains alerts
+            var activeField = typeof(AlertManager).GetField("_activeAlerts", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            var activeDict = (Dictionary<MessageOrigins, Dictionary<string, IEventMessage>>)activeField.GetValue(_alertManager);
+            Assert.IsTrue(activeDict.TryGetValue(MessageOrigins.SensorManager, out var sdict) && sdict.Count > 0, "Sensor alerts should be stored.");
+            Assert.IsTrue(activeDict.TryGetValue(MessageOrigins.ActuatorManager, out var adict) && adict.Count > 0, "Actuator alerts should be stored.");
+
+            // Clear published messages captured
+            _publishedMessages.Clear();
+
+            // Act: send clearAllMessages = true (payload must be non-null per implementation)
+            var clearMsg = new AlertClearMessage<IEventMessage>
+            {
+                Source = "ALL",
+                Payload = sensorMsg,
+                clearAllMessages = true
+            };
+            var clearEnv = new MessageEnvelope<AlertClearMessage<IEventMessage>>(clearMsg, MessageOrigins.DisplayManager, MessageTypes.AlertClear);
+            var clearMethod = typeof(AlertManager).GetMethod("HandleAlertClear", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            clearMethod.Invoke(_alertManager, new object[] { clearEnv });
+
+            // Assert: ack published with Source == "ALL" and alertCleared == true
+            Assert.IsTrue(_publishedMessages.Exists(m => m is MessageEnvelope<AlertClearAckMessage>));
+            var ackObj = _publishedMessages.Find(m => m is MessageEnvelope<AlertClearAckMessage>) as MessageEnvelope<AlertClearAckMessage>;
+            Assert.IsNotNull(ackObj, "AlertClearAck should be published.");
+            Assert.AreEqual("ALL", ackObj.Payload.Source);
+            Assert.IsTrue(ackObj.Payload.alertCleared);
+
+            // Assert: internal store cleared
+            var activeAfter = (Dictionary<MessageOrigins, Dictionary<string, IEventMessage>>)activeField.GetValue(_alertManager);
+            Assert.AreEqual(0, activeAfter.Count, "All active alert dictionaries should be cleared when clearAllMessages is true.");
+        }
+
+        [TestMethod]
         public void Start_ShouldSubscribeToAllHandlers()
         {
             _alertManager.Start();

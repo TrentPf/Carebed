@@ -165,7 +165,7 @@ namespace Carebed.Managers
             bool alertNotFound = false;
 
             var message = envelope.Payload;
-            if (message == null || message.Payload == null) return;
+            if (message == null ) return;
 
             if (message.clearAllMessages)
             {
@@ -178,6 +178,8 @@ namespace Carebed.Managers
                 _ = _eventBus.PublishAsync(ackEnv);
                 return;
             }
+
+            if (message.Payload == null) return;
 
             if (message.Payload is SensorMessageBase sensorMsg)
             {
