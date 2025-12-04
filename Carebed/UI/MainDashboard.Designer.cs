@@ -78,7 +78,7 @@ namespace Carebed.UI
 
         #region Windows Forms Elements
 
-        private Color AppColour = Color.Ivory;
+        private Color AppColour = Color.DodgerBlue;
 
         #region Alert Banner
 
@@ -942,7 +942,7 @@ namespace Carebed.UI
                 WrapContents = true,
                 FlowDirection = FlowDirection.LeftToRight,
                 Padding = new Padding(8),
-                BackColor = Color.White
+                BackColor = AppColour
             };
         }
 
