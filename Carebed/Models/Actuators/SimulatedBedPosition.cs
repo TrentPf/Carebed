@@ -10,7 +10,9 @@ namespace Carebed.Models.Actuators
         private double _position = 0.0; // 0..100% (0 = flat, 100 = fully raised)
         private DateTime? _moveTimestamp = null;
         private ActuatorCommands? _currentMotion = null;
-        private const double _speedPercentPerSecond = 5.0; // percent per second
+        private const double _speedPercentPerSecond = 33.33; // percent per second
+        private Task? _movementTask;
+        private CancellationTokenSource? _movementCts;
 
         public SimulatedBedPosition(string actuatorId) : base(actuatorId, ActuatorTypes.BedLift, GetTransitionMap())
         {
@@ -35,8 +37,7 @@ namespace Carebed.Models.Actuators
                 case ActuatorCommands.Raise:
                     if (TryTransition(ActuatorStates.Moving))
                     {
-                        _currentMotion = ActuatorCommands.Raise;
-                        _moveTimestamp = DateTime.UtcNow;
+                        StartMovementTimer(command);
                         return true;
                     }
                     return false;
@@ -44,22 +45,21 @@ namespace Carebed.Models.Actuators
                 case ActuatorCommands.Lower:
                     if (TryTransition(ActuatorStates.Moving))
                     {
-                        _currentMotion = ActuatorCommands.Lower;
-                        _moveTimestamp = DateTime.UtcNow;
+                        StartMovementTimer(command);
                         return true;
                     }
                     return false;
 
                 case ActuatorCommands.Stop:
-                    if (CurrentState == ActuatorStates.Moving)
+                    CancelMovementTimer();
+                    TryTransition(ActuatorStates.Completed);
+                    // Schedule transition to Idle after 500ms
+                    Task.Run(async () =>
                     {
-                        UpdatePosition();
-                        _currentMotion = null;
-                        _moveTimestamp = null;
-                        TryTransition(ActuatorStates.Completed);
-                        return true;
-                    }
-                    return false;
+                        await Task.Delay(500);
+                        TryTransition(ActuatorStates.Idle);
+                    });
+                    return true;
 
                 case ActuatorCommands.Lock:
                     return TryTransition(ActuatorStates.Locked);
@@ -74,6 +74,42 @@ namespace Carebed.Models.Actuators
                 default:
                     return false;
             }
+        }
+
+        private void StartMovementTimer(ActuatorCommands motion)
+        {
+            CancelMovementTimer(); // Cancel any previous movement
+
+            _movementCts = new CancellationTokenSource();
+            _movementTask = Task.Run(async () =>
+            {
+                try
+                {
+                    // Simulate movement duration (customize as needed)
+                    await Task.Delay(TimeSpan.FromSeconds(3), _movementCts.Token);
+
+                    TryTransition(ActuatorStates.Completed);
+
+                    await Task.Delay(500, _movementCts.Token);
+
+                    TryTransition(ActuatorStates.Idle);
+                }
+                catch (TaskCanceledException)
+                {
+                    // Movement was cancelled (e.g., by Stop command)
+                }
+            }, _movementCts.Token);
+        }
+
+        private void CancelMovementTimer()
+        {
+            if (_movementCts != null)
+            {
+                _movementCts.Cancel();
+                _movementCts.Dispose();
+                _movementCts = null;
+            }
+            _movementTask = null;
         }
 
         private void UpdatePosition()
@@ -91,7 +127,7 @@ namespace Carebed.Models.Actuators
                 {
                     _currentMotion = null;
                     _moveTimestamp = null;
-                    TryTransition(ActuatorStates.Completed);
+                    TryExecute(ActuatorCommands.Stop);
                 }
             }
             else if (_currentMotion == ActuatorCommands.Lower)
@@ -101,17 +137,15 @@ namespace Carebed.Models.Actuators
                 {
                     _currentMotion = null;
                     _moveTimestamp = null;
-                    TryTransition(ActuatorStates.Completed);
+                    TryExecute(ActuatorCommands.Stop);
                 }
             }
             else
             {
-                // If not moving, clear motion/timestamp
                 _currentMotion = null;
                 _moveTimestamp = null;
             }
 
-            // reset timestamp so subsequent telemetry increments from now
             _moveTimestamp = DateTime.UtcNow;
         }
 

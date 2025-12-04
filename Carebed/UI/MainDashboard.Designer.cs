@@ -1141,9 +1141,12 @@ namespace Carebed.UI
                 // Sensor telemetry
                 if (payload is SensorTelemetryMessage stm)
                 {
+                    string sensorId = !string.IsNullOrWhiteSpace(stm.SensorID)
+                        ? stm.SensorID
+                        : (stm.Data?.Source ?? "(unknown sensor)");
                     string value = stm.Data != null ? stm.Data.Value.ToString() : "(no value)";
-                    string type = stm.GetType().Name.Replace("Message", "");
-                    return $"Sensor: {type}, Value: {value}";
+                    string units = stm.Data?.Metadata != null && stm.Data.Metadata.TryGetValue("units", out var u) ? $" {u}" : "";
+                    return $"SensorID: {sensorId}, Sensor Reading: {value}{units}";
                 }
                 // Sensor status
                 if (payload is SensorStatusMessage ssm)
@@ -1172,7 +1175,7 @@ namespace Carebed.UI
                 if (payload is ActuatorStatusMessage asm)
                 {
                     string type = asm.TypeOfActuator.ToString();
-                    return $"Actuator: {type}, State: {asm.CurrentState}, Msg: {asm.Message}";
+                    return $"Actuator: {type}, State: {asm.CurrentState}";
                 }
                 // Actuator error
                 if (payload is ActuatorErrorMessage aem)
@@ -1181,28 +1184,58 @@ namespace Carebed.UI
                     return $"Actuator Error: {type}, Code: {aem.ErrorCode}, {aem.Description}, State: {aem.CurrentState}";
                 }
 
+                // Actuator command
+                if (payload is ActuatorCommandMessage acm)
+                {
+                    string paramStr = acm.Parameters != null
+                        ? string.Join(", ", acm.Parameters.Select(kv => $"{kv.Key}: {kv.Value}"))
+                        : "None";
+                    return $"ActuatorCommand: {acm.CommandType}, Params: {paramStr}, CorrelationId: {acm.CorrelationId}";
+                }
+                // Actuator command ack
+                if (payload is ActuatorCommandAckMessage ack)
+                {
+                    string metaStr = ack.Metadata != null && ack.Metadata.Count > 0
+                        ? string.Join(", ", ack.Metadata.Select(kv => $"{kv.Key}: {kv.Value}"))
+                        : "None";
+                    return $"ActuatorCommandAck: {ack.CommandType}, CanExecute: {ack.CanExecuteCommand}, Metadata: {metaStr}, CorrelationId: {ack.CorrelationId}";
+                }
+
                 // Fallback: try to use AlertText, Message, or ToString
+                // Fallback: handle AlertActionMessage<T> as "Alert"
                 var t = payload.GetType();
-                var alertProp = t.GetProperty("AlertText");
-                if (alertProp != null)
+                if (t.IsGenericType && t.Name.StartsWith("AlertActionMessage"))
                 {
-                    var at = alertProp.GetValue(payload) as string;
-                    if (!string.IsNullOrWhiteSpace(at))
-                        return at;
+                    var alertTextProp = t.GetProperty("AlertText");
+                    var alertNumberProp = t.GetProperty("alertNumber");
+                    var payloadProp = t.GetProperty("Payload");
+                    string alertText = alertTextProp?.GetValue(payload) as string ?? "";
+                    string alertNumber = alertNumberProp?.GetValue(payload)?.ToString() ?? "";
+
+                    // Try to extract an ID from the payload (SensorID, ActuatorId, etc.)
+                    string triggeredBy = "";
+                    var payloadValue = payloadProp?.GetValue(payload);
+                    if (payloadValue != null)
+                    {
+                        var payloadType = payloadValue.GetType();
+                        var sensorIdProp = payloadType.GetProperty("SensorID");
+                        var actuatorIdProp = payloadType.GetProperty("ActuatorId");
+                        if (sensorIdProp != null)
+                            triggeredBy = sensorIdProp.GetValue(payloadValue)?.ToString() ?? "";
+                        else if (actuatorIdProp != null)
+                            triggeredBy = actuatorIdProp.GetValue(payloadValue)?.ToString() ?? "";
+                    }
+
+                    string triggerInfo = !string.IsNullOrWhiteSpace(triggeredBy) ? $"Triggered by: {triggeredBy}" : "";
+                    return $"Alert Number: #{alertNumber}, {triggerInfo}, Value: {alertText}";
                 }
-                var msgProp = t.GetProperty("Message");
-                if (msgProp != null)
-                {
-                    var mt = msgProp.GetValue(payload)?.ToString();
-                    if (!string.IsNullOrWhiteSpace(mt))
-                        return mt;
-                }
-                return payload.ToString() ?? string.Empty;
             }
             catch
             {
                 return payload.GetType().Name;
             }
+            // Fallback for unknown types
+            return payload.ToString() ?? payload.GetType().Name;
         }
 
         /// <summary>
@@ -2036,19 +2069,7 @@ namespace Carebed.UI
             {
                 if (!actuatorsTabActive || actuatorsPanel == null) return;
 
-                string actuatorId = msg.ActuatorId ?? string.Empty;
-
-                // Determine an inferred state from telemetry (Watts or Position)
-                if (!string.IsNullOrEmpty(actuatorId))
-                {
-                    ActuatorStates inferred = ActuatorStates.Off;
-                    if (msg.Watts.HasValue && msg.Watts.Value > 0.1)
-                        inferred = ActuatorStates.On;
-                    else if (msg.Position != null)
-                        inferred = ActuatorStates.On; // assume presence of position indicates engaged
-
-                    _actuatorStates[actuatorId] = inferred;
-                }
+                string actuatorId = msg.ActuatorId ?? string.Empty;               
 
                 if (actuatorStatusLabels.TryGetValue(actuatorId, out var statusLabel))
                 {
@@ -2056,12 +2077,6 @@ namespace Carebed.UI
                     {
                         statusLabel.Text = $"Temp: {msg.Temperature.Value:F1}°C";
                         statusLabel.ForeColor = msg.IsCritical ? Color.Red : Color.Black;
-                    }
-                    else if (msg.Watts.HasValue)
-                    {
-                        bool isOn = msg.Watts.Value > 0.1;
-                        statusLabel.Text = isOn ? "On" : "Off";
-                        statusLabel.ForeColor = isOn ? Color.LimeGreen : Color.Gray;
                     }
                     else if (msg.Position != null)
                     {
@@ -2119,9 +2134,18 @@ namespace Carebed.UI
 
                 if (actuatorToggleButtons.TryGetValue(actuatorId, out var btn))
                 {
-                    bool isOn = msg.CurrentState == ActuatorStates.On;
-                    btn.Text = isOn ? "Turn Off" : "Turn On";
-                    btn.BackColor = isOn ? Color.LightCoral : Color.LightGreen;
+                    if (_availableActuators.TryGetValue(actuatorId, out var type) && type == ActuatorTypes.Lamp)
+                    {
+                        bool isOn = msg.CurrentState == ActuatorStates.On;
+                        btn.Text = isOn ? "Turn Off" : "Turn On";
+                    }
+                    else
+                    {
+                        bool isMoving = msg.CurrentState == ActuatorStates.Moving;
+                        btn.Text = isMoving ? "Stop Moving" : "Start Moving";
+                    }
+                    btn.BackColor = (msg.CurrentState == ActuatorStates.On || msg.CurrentState == ActuatorStates.Moving)
+                        ? Color.LightCoral : Color.LightGreen;
                     btn.ForeColor = Color.Black;
                 }
 
@@ -2248,42 +2272,59 @@ namespace Carebed.UI
                     Margin = new Padding(4, 0, 4, 4)
                 };
 
+                // Determine the known state (from cache or default)
+                ActuatorStates knownState = _actuatorStates.TryGetValue(actuatorId, out var state)
+                    ? state
+                    : (type == ActuatorTypes.Lamp ? ActuatorStates.Off : ActuatorStates.Idle);
+
                 var statusLabel = new Label
                 {
-                    Text = "Off",
+                    Text = knownState.ToString(),
                     Name = $"StatusLabel_{actuatorId}",
                     AutoSize = true,
                     Width = 120,
                     TextAlign = ContentAlignment.MiddleLeft,
-                    ForeColor = Color.Black,
+                    ForeColor = (knownState == ActuatorStates.On || knownState == ActuatorStates.Completed)
+                        ? Color.LimeGreen
+                        : (knownState == ActuatorStates.Error ? Color.Red : Color.Gray),
                     Margin = new Padding(4)
                 };
                 actuatorStatusLabels[actuatorId] = statusLabel;
 
+                // Determine button text and color based on actuator type and state
+                string buttonOnText, buttonOffText, buttonText;
+                Color buttonColor;
+
+                if (type == ActuatorTypes.Lamp)
+                {
+                    buttonOnText = "Turn On";
+                    buttonOffText = "Turn Off";
+                    bool isOn = knownState == ActuatorStates.On;
+                    buttonText = isOn ? buttonOffText : buttonOnText;
+                    buttonColor = isOn ? Color.LightCoral : Color.LightGreen;
+                }
+                else
+                {
+                    buttonOnText = "Start Moving";
+                    buttonOffText = "Stop Moving";
+                    bool isMoving = knownState == ActuatorStates.Moving;
+                    buttonText = isMoving ? buttonOffText : buttonOnText;
+                    buttonColor = isMoving ? Color.LightCoral : Color.LightGreen;
+                }
+
                 var toggleButton = new Button
                 {
-                    Text = "Turn On",
+                    Text = buttonText,
                     Name = $"ToggleButton_{actuatorId}",
                     AutoSize = true,
-                    Margin = new Padding(4)
+                    Margin = new Padding(4),
+                    BackColor = buttonColor,
+                    ForeColor = Color.Black
                 };
 
                 // capture variables for closure
                 toggleButton.Click += (s, e) => ToggleActuatorState(actuatorId, toggleButton);
                 actuatorToggleButtons[actuatorId] = toggleButton;
-
-                // Initialize UI from cached state if available
-                if (_actuatorStates.TryGetValue(actuatorId, out var knownState))
-                {
-                    statusLabel.Text = knownState.ToString();
-                    statusLabel.ForeColor = (knownState == ActuatorStates.On || knownState == ActuatorStates.Completed)
-                        ? Color.LimeGreen : (knownState == ActuatorStates.Error ? Color.Red : Color.Gray);
-
-                    bool isOn = knownState == ActuatorStates.On;
-                    toggleButton.Text = isOn ? "Turn Off" : "Turn On";
-                    toggleButton.BackColor = isOn ? Color.LightCoral : Color.LightGreen;
-                    toggleButton.ForeColor = Color.Black;
-                }
 
                 // Create an icon box for the actuator
                 var iconBox = new PictureBox
@@ -2292,7 +2333,9 @@ namespace Carebed.UI
                     Size = new Size(64, 64),
                     SizeMode = PictureBoxSizeMode.Zoom,
                     Margin = new Padding(0, 0, 8, 0),
-                    Image = GetActuatorIcon(actuatorId, false) // default to inactive icon
+                    Image = GetActuatorIcon(actuatorId,
+                        (type == ActuatorTypes.Lamp && knownState == ActuatorStates.On) ||
+                        (type != ActuatorTypes.Lamp && knownState == ActuatorStates.Moving))
                 };
                 actuatorIconBoxes[actuatorId] = iconBox;
 
@@ -2402,15 +2445,15 @@ namespace Carebed.UI
         /// <summary>
         /// Map actuator type + desired toggle to a concrete ActuatorCommands value.
         /// </summary>
-        private ActuatorCommands GetToggleCommand(ActuatorTypes type, bool currentlyOn)
+        private ActuatorCommands GetToggleCommand(ActuatorTypes type, bool currentlyMoving)
         {
             // currentlyOn == true means we want to turn it off (deactivate)
             return type switch
             {
-                ActuatorTypes.Lamp => currentlyOn ? ActuatorCommands.DeactivateLamp : ActuatorCommands.ActivateLamp,
+                ActuatorTypes.Lamp => currentlyMoving ? ActuatorCommands.DeactivateLamp : ActuatorCommands.ActivateLamp,
                 ActuatorTypes.BedLift or ActuatorTypes.HeadTilt or ActuatorTypes.LegRaise or ActuatorTypes.BedRoll or ActuatorTypes.SideRail
-                    => currentlyOn ? ActuatorCommands.Lower : ActuatorCommands.Raise,
-                _ => currentlyOn ? ActuatorCommands.Stop : ActuatorCommands.Reset,
+                    => currentlyMoving ? ActuatorCommands.Stop : ActuatorCommands.Raise, // Use Raise to start moving
+                _ => currentlyMoving ? ActuatorCommands.Stop : ActuatorCommands.Reset,
             };
         }
 
@@ -2423,34 +2466,48 @@ namespace Carebed.UI
         {
             if (string.IsNullOrWhiteSpace(actuatorId) || button == null) return;
 
-            // Determine desired action from button text
-            bool currentlyOn = button.Text == "Turn Off";
-
-            // Determine actuator type (fallback to Custom)
             ActuatorTypes type = _availableActuators.ContainsKey(actuatorId) ? _availableActuators[actuatorId] : ActuatorTypes.Custom;
+            var currentState = _actuatorStates.TryGetValue(actuatorId, out var state) ? state : ActuatorStates.Idle;
+            bool currentlyMoving = currentState == ActuatorStates.Moving;
 
-            // Map to a command depending on type
-            ActuatorCommands cmd = GetToggleCommand(type, currentlyOn);
+            // Determine the intended action and new state
+            bool willBeOn;
+            string buttonText;
+            Color buttonColor;
 
-            // Update UI immediately for responsiveness
-            button.Text = currentlyOn ? "Turn On" : "Turn Off";
-            button.BackColor = currentlyOn ? Color.LightGreen : Color.LightCoral;
+            if (type == ActuatorTypes.Lamp)
+            {
+                // For Lamp: toggle between On and Off
+                willBeOn = currentState != ActuatorStates.On;
+                buttonText = willBeOn ? "Turn Off" : "Turn On";
+                buttonColor = willBeOn ? Color.LightCoral : Color.LightGreen;
+                _actuatorStates[actuatorId] = willBeOn ? ActuatorStates.On : ActuatorStates.Off;
+            }
+            else
+            {
+                // For other actuators: toggle between Moving and Idle
+                willBeOn = !currentlyMoving;
+                buttonText = willBeOn ? "Stop Moving" : "Start Moving";
+                buttonColor = willBeOn ? Color.LightCoral : Color.LightGreen;
+                _actuatorStates[actuatorId] = willBeOn ? ActuatorStates.Moving : ActuatorStates.Idle;
+            }
 
-            // Update cached state immediately so rebuilding UI keeps the expected state
-            _actuatorStates[actuatorId] = currentlyOn ? ActuatorStates.Off : ActuatorStates.On;
+            // Update UI once
+            button.Text = buttonText;
+            button.BackColor = buttonColor;
 
             // Update icon immediately if present
             if (actuatorIconBoxes.TryGetValue(actuatorId, out var iconBox))
-                iconBox.Image = GetActuatorIcon(actuatorId, !currentlyOn);
+                iconBox.Image = GetActuatorIcon(actuatorId, willBeOn);
 
-            // Build command message
+            // Build and send command
+            ActuatorCommands cmd = GetToggleCommand(type, !willBeOn);
             var command = new ActuatorCommandMessage
             {
                 ActuatorId = actuatorId,
                 TypeOfActuator = type,
                 CommandType = cmd
             };
-
             var envelope = new MessageEnvelope<ActuatorCommandMessage>(command, MessageOrigins.DisplayManager, MessageTypes.ActuatorCommand);
             _ = _eventBus.PublishAsync(envelope);
         }

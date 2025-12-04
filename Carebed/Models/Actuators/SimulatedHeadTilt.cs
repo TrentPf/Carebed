@@ -10,7 +10,9 @@ namespace Carebed.Models.Actuators
         private double _angle = 0.0; // angle in degrees, -30..+30
         private DateTime? _moveTimestamp = null;
         private ActuatorCommands? _currentMotion = null;
-        private const double _degreesPerSecond = 5.0;
+        private const double _degreesPerSecond = 33.33;
+        private Task? _movementTask;
+        private CancellationTokenSource? _movementCts;
 
         public SimulatedHeadTilt(string actuatorId) : base(actuatorId, ActuatorTypes.HeadTilt, GetTransitionMap())
         {
@@ -33,10 +35,9 @@ namespace Carebed.Models.Actuators
             switch (command)
             {
                 case ActuatorCommands.Raise:
-                    if (TryTransition(ActuatorStates.Moving))
+                    if(TryTransition(ActuatorStates.Moving))
                     {
-                        _currentMotion = ActuatorCommands.Raise; // treat Raise as tilt forward
-                        _moveTimestamp = DateTime.UtcNow;
+                        StartMovementTimer(command);
                         return true;
                     }
                     return false;
@@ -44,22 +45,21 @@ namespace Carebed.Models.Actuators
                 case ActuatorCommands.Lower:
                     if (TryTransition(ActuatorStates.Moving))
                     {
-                        _currentMotion = ActuatorCommands.Lower; // treat Lower as tilt backward
-                        _moveTimestamp = DateTime.UtcNow;
+                        StartMovementTimer(command);
                         return true;
                     }
                     return false;
 
                 case ActuatorCommands.Stop:
-                    if (CurrentState == ActuatorStates.Moving)
+                    CancelMovementTimer();
+                    TryTransition(ActuatorStates.Completed);
+                    // Schedule transition to Idle after 500ms
+                    Task.Run(async () =>
                     {
-                        UpdateAngle();
-                        _currentMotion = null;
-                        _moveTimestamp = null;
-                        TryTransition(ActuatorStates.Completed);
-                        return true;
-                    }
-                    return false;
+                        await Task.Delay(500);
+                        TryTransition(ActuatorStates.Idle);
+                    });
+                    return true;
 
                 case ActuatorCommands.Lock:
                     return TryTransition(ActuatorStates.Locked);
@@ -74,6 +74,44 @@ namespace Carebed.Models.Actuators
                 default:
                     return false;
             }
+        }
+
+        private void StartMovementTimer(ActuatorCommands motion)
+        {
+            CancelMovementTimer(); // Cancel any previous movement
+
+            _movementCts = new CancellationTokenSource();
+            _movementTask = Task.Run(async () =>
+            {
+                try
+                {
+                    // Simulate movement duration (e.g., 3 seconds)
+                    await Task.Delay(TimeSpan.FromSeconds(3), _movementCts.Token);
+
+                    // Transition to Completed
+                    TryTransition(ActuatorStates.Completed);
+
+                    // Short pause before going Idle
+                    await Task.Delay(500, _movementCts.Token);
+
+                    TryTransition(ActuatorStates.Idle);
+                }
+                catch (TaskCanceledException)
+                {
+                    // Movement was cancelled (e.g., by Stop command)
+                }
+            }, _movementCts.Token);
+        }
+
+        private void CancelMovementTimer()
+        {
+            if (_movementCts != null)
+            {
+                _movementCts.Cancel();
+                _movementCts.Dispose();
+                _movementCts = null;
+            }
+            _movementTask = null;
         }
 
         private void UpdateAngle()
@@ -92,6 +130,9 @@ namespace Carebed.Models.Actuators
                     _currentMotion = null;
                     _moveTimestamp = null;
                     TryTransition(ActuatorStates.Completed);
+                    // Sleep for 500ms, then transition to Idle
+                    System.Threading.Thread.Sleep(500);
+                    TryTransition(ActuatorStates.Idle);
                 }
             }
             else if (_currentMotion == ActuatorCommands.Lower)
@@ -102,6 +143,9 @@ namespace Carebed.Models.Actuators
                     _currentMotion = null;
                     _moveTimestamp = null;
                     TryTransition(ActuatorStates.Completed);
+                    // Sleep for 500ms, then transition to Idle
+                    System.Threading.Thread.Sleep(500);
+                    TryTransition(ActuatorStates.Idle);
                 }
             }
             else
@@ -116,44 +160,7 @@ namespace Carebed.Models.Actuators
             _moveTimestamp = DateTime.UtcNow;
         }
 
-        //private void UpdatePosition()
-        //{
-        //    if (!_moveTimestamp.HasValue || !_currentMotion.HasValue)
-        //        return;
-
-        //    var seconds = (DateTime.UtcNow - _moveTimestamp.Value).TotalSeconds;
-        //    var delta = seconds * _speedPercentPerSecond;
-
-        //    if (_currentMotion == ActuatorCommands.Raise)
-        //    {
-        //        _position = Math.Min(100.0, _position + delta);
-        //        if (_position >= 100.0)
-        //        {
-        //            _currentMotion = null;
-        //            _moveTimestamp = null;
-        //            TryTransition(ActuatorStates.Completed);
-        //        }
-        //    }
-        //    else if (_currentMotion == ActuatorCommands.Lower)
-        //    {
-        //        _position = Math.Max(0.0, _position - delta);
-        //        if (_position <= 0.0)
-        //        {
-        //            _currentMotion = null;
-        //            _moveTimestamp = null;
-        //            TryTransition(ActuatorStates.Completed);
-        //        }
-        //    }
-        //    else
-        //    {
-        //        // If not moving, clear motion/timestamp
-        //        _currentMotion = null;
-        //        _moveTimestamp = null;
-        //    }
-
-        //    // reset timestamp so subsequent telemetry increments from now
-        //    _moveTimestamp = DateTime.UtcNow;
-        //}
+        
 
         public override ActuatorTelemetryMessage GetTelemetry()
         {
