@@ -14,6 +14,18 @@ Carebed is a modular, event-driven system designed for monitoring and managing s
 
 ---
 
+## Monitoring & Telemetry Design
+
+Carebed uses an event-driven architecture to aggregate and route sensor telemetry:
+- Sensor managers poll and normalize data
+- A centralized event bus enables decoupled communication
+- Standardized message envelopes provide metadata for logging, traceability, and monitoring
+- Unit tests validate core messaging and infrastructure components
+
+The system is designed to support KPI-style monitoring and future analytics extensions.
+
+---
+
 ## Project Structure
 - `Carebed/` - Main application (WinForms UI, managers, infrastructure)
 - `Carebed.Tests/` - Unit tests for infrastructure and messaging
