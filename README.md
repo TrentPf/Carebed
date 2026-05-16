@@ -10,6 +10,15 @@ In this way no systsem knows about any other system, beyond the message they rec
 
 ---
 
+## Design Goals
+
+- Decouple system components using event-driven communication
+- Improve maintainability through modular architecture
+- Support future scalability and integration
+- Improve traceability through structured message handling
+
+---
+
 ## Features
 - **Sensor Management:** Polls and aggregates data from multiple sensors.
 - **Actuator Management:** Controls actuators such as motors or alarms.
