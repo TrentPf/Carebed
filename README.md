@@ -6,7 +6,7 @@ Carebed is a modular, event-driven system designed for monitoring and managing s
 
 The main design goal with this system was to utilize an eventBus and very little coupling across modules. Each domain has a manager and that manager listens for message on the eventBus and delegates orders to the various workers it oversees.
 
-In this way no systsem knows about any other system, beyond the message they receive across the eventBus. 
+In this way no system knows about any other system, beyond the message they receive across the eventBus. 
 
 ---
 
