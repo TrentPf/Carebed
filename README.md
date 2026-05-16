@@ -40,6 +40,12 @@ The event-driven architecture was designed to reduce coupling between components
 
 ---
 
+## System Architecture
+
+<img width="1600" height="900" alt="carebed_event_driven_architecture" src="https://github.com/user-attachments/assets/5e10eda5-df6e-4896-8451-3310f4e9c097" />
+
+---
+
 ## Getting Started
 
 ### Prerequisites
