@@ -78,6 +78,24 @@ Contributions are welcome! Please open issues or submit pull requests for bug fi
 
 ---
 
+## What I Contributed
+
+- Designed and implemented modular event-driven components
+- Built message/event handling logic
+- Added unit tests for core behaviour
+- Helped document class responsibilities and architecture decisions
+
+---
+
+## Future Improvements
+
+- Add actuator management
+- Add persistent logging
+- Expand unit test coverage
+- Improve UI feedback for sensor states
+
+---
+
 ## License
 This project is licensed under the GNU General Public License v3.0. See the `LICENSE.txt` file for details.
 
