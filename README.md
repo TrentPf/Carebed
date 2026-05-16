@@ -17,6 +17,10 @@ In this way no systsem knows about any other system, beyond the message they rec
 - Support future scalability and integration
 - Improve traceability through structured message handling
 
+### Scalability Considerations
+
+The event-driven architecture was designed to reduce coupling between components and support future expansion of sensors and system integrations.
+
 ---
 
 ## Features
